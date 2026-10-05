@@ -208,7 +208,7 @@ export function Studio() {
         </Reveal>
         <Reveal delay={80}>
           <p className="mt-5 max-w-xl text-lg leading-relaxed tracking-[-0.015em] text-muted sm:text-xl">
-            Kado turns an X, LinkedIn or GitHub handle into a <span className="marker whitespace-nowrap">share-ready card</span> in
+            Kado turns an X, GitHub or Instagram handle into a <span className="marker whitespace-nowrap">share-ready card</span> in
             seconds. No sign-up, no design tool.
           </p>
         </Reveal>

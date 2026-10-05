@@ -5,7 +5,7 @@ import { Reveal } from "@/components/reveal";
 import { Studio } from "@/components/studio";
 import { PLATFORM_ORDER, PLATFORMS } from "@/lib/platforms";
 
-const GITHUB_URL = "https://github.com/kaihere14/kado";
+const GITHUB_URL = "https://github.com/kaihere14/Kado";
 
 const PLATFORM_NOTES: Record<string, string> = {
   x: "Name, bio, banner and counts, pulled live from the handle.",
