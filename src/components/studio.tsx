@@ -213,8 +213,9 @@ export function Studio() {
           </p>
         </Reveal>
 
-        <Reveal delay={160}>
-          <div className="mt-9 flex flex-wrap justify-center gap-1 rounded-full bg-well p-1">
+        <Reveal delay={160} className="w-full max-w-md sm:w-auto sm:max-w-none">
+          {/* Four equal tabs on phones so they never wrap; a single pill row from sm up. */}
+          <div className="mt-9 grid w-full grid-cols-4 gap-1 rounded-[20px] bg-well p-1 sm:flex sm:justify-center sm:rounded-full">
             {PLATFORM_ORDER.map((id) => {
               const Icon = PLATFORM_ICONS[id];
               return (
@@ -227,7 +228,7 @@ export function Studio() {
                   }}
                   aria-pressed={platform === id}
                   className={clsx(
-                    "flex items-center gap-2 rounded-full px-4 py-2 text-sm transition",
+                    "flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition sm:flex-row sm:gap-2 sm:rounded-full sm:px-4 sm:text-sm",
                     platform === id
                       ? "bg-white font-medium text-ink shadow-[0_1px_2px_rgba(42,42,39,.12)]"
                       : "text-muted hover:text-ink",
@@ -244,9 +245,9 @@ export function Studio() {
         <Reveal delay={240} className="w-full max-w-md">
           <form
             onSubmit={generate}
-            className="group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-5 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition focus-within:ring-black/20"
+            className="group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-4 sm:pl-5 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition focus-within:ring-black/20"
           >
-            <span className="shrink-0 text-[15px] text-muted/70">{config.prefix}</span>
+            <span className="shrink-0 text-[14px] text-muted/70 sm:text-[15px]">{config.prefix}</span>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -255,12 +256,12 @@ export function Studio() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              className="min-w-0 flex-1 bg-transparent text-[15px] font-medium outline-none focus-visible:outline-none placeholder:font-normal placeholder:text-black/25"
+              className="min-w-0 flex-1 bg-transparent text-base font-medium sm:text-[15px] outline-none focus-visible:outline-none placeholder:font-normal placeholder:text-black/25"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="flex shrink-0 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white transition hover:bg-black disabled:opacity-35"
+              className="flex shrink-0 items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white sm:px-5 transition hover:bg-black disabled:opacity-35"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Make card
@@ -270,7 +271,7 @@ export function Studio() {
             <div
               aria-hidden
               className={clsx(
-                "pointer-events-none absolute top-[54%] left-[31%] transition-opacity duration-300 group-focus-within:opacity-0",
+                "pointer-events-none absolute top-[54%] left-[31%] hidden transition-opacity duration-300 group-focus-within:opacity-0 sm:block",
                 input && "opacity-0",
               )}
             >
@@ -311,7 +312,7 @@ export function Studio() {
                 "radial-gradient(ellipse 70% 80% at 0% 0%, #e6dcff 0%, transparent 60%), radial-gradient(ellipse 70% 80% at 100% 100%, #fbd9e8 0%, transparent 60%), #efebf7",
             }}
           >
-            <div className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]">
+            <div className="overflow-clip rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]">
               <div className="flex items-center gap-3 border-b border-black/[.06] px-4 py-3">
                 <div className="flex gap-1.5" aria-hidden>
                   <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
@@ -334,9 +335,10 @@ export function Studio() {
                 </button>
               </div>
 
-              {/* Fixed-height body: the inspector scrolls on its own instead of stretching the window. */}
-              <div className="grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
-                <div className="flex h-[340px] bg-[#f6f5f1] p-4 sm:h-[460px] sm:p-6 lg:h-full lg:p-8">
+              {/* Fixed-height body on desktop: the inspector scrolls on its own instead of stretching the window.
+                  Stacked below lg, where the preview sticks to the top so every tweak stays in view. */}
+              <div className="flex flex-col lg:grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
+                <div className="sticky top-0 z-10 flex h-[250px] border-b border-black/[.06] bg-[#f6f5f1] p-4 sm:h-[400px] sm:p-6 lg:static lg:h-full lg:border-b-0 lg:p-8">
                   <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     <div
                       className="relative shrink-0 overflow-hidden rounded-xl ring-1 ring-black/[.06]"
@@ -364,8 +366,9 @@ export function Studio() {
                   </div>
                 </div>
 
-                <aside className="flex min-h-0 flex-col border-t border-black/[.06] text-sm lg:border-t-0 lg:border-l">
-                  <div className="min-h-0 flex-1 divide-y divide-black/[.06] overflow-y-auto overscroll-contain">
+                <aside className="flex min-h-0 flex-col text-sm lg:border-l lg:border-black/[.06]">
+                  {/* Its own scroll box only on desktop: on phones an empty overflow box with overscroll-contain swallows page swipes. */}
+                  <div className="divide-y divide-black/[.06] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
                     <InspectorSection title="Style">
                       <Segmented
                         value={options.style}
@@ -384,7 +387,7 @@ export function Studio() {
                             aria-pressed={f.id === format.id}
                             onClick={() => setFormatId(f.id)}
                             className={clsx(
-                              "flex items-center gap-3 rounded-lg px-2 py-1.5 text-left transition",
+                              "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition lg:py-1.5",
                               f.id === format.id ? "bg-well text-ink" : "text-muted hover:text-ink",
                             )}
                           >
@@ -541,7 +544,7 @@ export function Studio() {
                     </details>
                   </div>
 
-                  <div className="flex gap-2 border-t border-black/[.06] bg-white p-4">
+                  <div className="sticky bottom-0 z-10 flex gap-2 border-t border-black/[.06] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:static">
                     <button
                       type="button"
                       onClick={() => exportImage("download")}
@@ -626,7 +629,7 @@ function Segmented<T extends string>({
           aria-pressed={value === v}
           onClick={() => onChange(v)}
           className={clsx(
-            "flex-1 rounded-full px-2 py-1.5 text-[13px] transition",
+            "flex-1 rounded-full px-2 py-2 text-[13px] transition lg:py-1.5",
             value === v ? "bg-white font-medium shadow-[0_1px_2px_rgba(42,42,39,.14)]" : "text-muted hover:text-ink",
           )}
         >
@@ -674,7 +677,7 @@ function Field({
   type?: "text" | "number";
 }) {
   const className =
-    "w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-black/10 outline-none transition focus:ring-2 focus:ring-[#8b7cf6]/60";
+    "w-full rounded-lg bg-white px-3 py-2 text-base ring-1 ring-black/10 outline-none transition focus:ring-2 focus:ring-[#8b7cf6]/60 sm:text-sm";
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-xs text-muted">{label}</span>
