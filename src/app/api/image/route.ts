@@ -1,6 +1,12 @@
 // Same-origin image proxy so html-to-image can read remote avatars/banners
 // into a canvas without CORS tainting it. Only known profile CDNs are allowed.
 const ALLOWED_HOSTS = new Set(["pbs.twimg.com", "abs.twimg.com", "avatars.githubusercontent.com"]);
+// Instagram serves avatars from many numbered CDN subdomains.
+const ALLOWED_HOST_SUFFIXES = [".cdninstagram.com", ".fbcdn.net"];
+
+function isAllowedHost(hostname: string): boolean {
+  return ALLOWED_HOSTS.has(hostname) || ALLOWED_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
+}
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -14,7 +20,7 @@ export async function GET(request: Request) {
   } catch {
     return new Response("Invalid url", { status: 400 });
   }
-  if (url.protocol !== "https:" || !ALLOWED_HOSTS.has(url.hostname)) {
+  if (url.protocol !== "https:" || !isAllowedHost(url.hostname)) {
     return new Response("Host not allowed", { status: 403 });
   }
 

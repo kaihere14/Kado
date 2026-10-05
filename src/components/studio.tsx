@@ -14,6 +14,7 @@ import {
   type Profile,
 } from "@/lib/platforms";
 import { PLATFORM_ICONS } from "./brand-icons";
+import { Reveal } from "./reveal";
 import { DEFAULT_FORMAT, EXPORT_SCALE, FORMATS, getFormat } from "@/lib/formats";
 import { cardWidth, ProfileCard, type CardOptions, type CardSize, type CardStyle } from "./profile-card";
 
@@ -137,6 +138,13 @@ export function Studio() {
     try {
       const res = await fetch(`/api/profile/${platform}/${encodeURIComponent(handle)}`);
       const data = await res.json();
+      // Instagram often hides profile data; fall back to a card the user fills in.
+      if (!res.ok && platform === "instagram" && res.status !== 400) {
+        showProfile(blankProfile(platform, handle));
+        scrollToStudio();
+        setError(data.error ?? "Couldn't read that Instagram profile, so fill in the details yourself.");
+        return;
+      }
       if (!res.ok) throw new Error(data.error ?? "Something went wrong.");
       showProfile(data as Profile);
       scrollToStudio();
@@ -193,358 +201,397 @@ export function Studio() {
   return (
     <>
       <section className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 pt-14 text-center sm:pt-20">
-        <h1 className="text-[40px] leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-[60px]">
-          Your profile, as a card worth posting.
-        </h1>
-        <p className="mt-5 max-w-xl text-lg leading-relaxed tracking-[-0.015em] text-muted sm:text-xl">
-          Kado turns an X, LinkedIn or GitHub handle into a <span className="marker">share-ready card</span> in
-          seconds. No sign-up, no design tool.
-        </p>
+        <Reveal delay={0}>
+          <h1 className="text-[40px] leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-[60px]">
+            Your profile, as a card worth posting.
+          </h1>
+        </Reveal>
+        <Reveal delay={80}>
+          <p className="mt-5 max-w-xl text-lg leading-relaxed tracking-[-0.015em] text-muted sm:text-xl">
+            Kado turns an X, LinkedIn or GitHub handle into a <span className="marker whitespace-nowrap">share-ready card</span> in
+            seconds. No sign-up, no design tool.
+          </p>
+        </Reveal>
 
-        <div className="mt-9 flex flex-wrap justify-center gap-1 rounded-full bg-well p-1">
-          {PLATFORM_ORDER.map((id) => {
-            const Icon = PLATFORM_ICONS[id];
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  setPlatform(id);
-                  setError(null);
-                }}
-                aria-pressed={platform === id}
-                className={clsx(
-                  "flex items-center gap-2 rounded-full px-4 py-2 text-sm transition",
-                  platform === id
-                    ? "bg-white font-medium text-ink shadow-[0_1px_2px_rgba(42,42,39,.12)]"
-                    : "text-muted hover:text-ink",
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {PLATFORMS[id].label}
-              </button>
-            );
-          })}
-        </div>
+        <Reveal delay={160}>
+          <div className="mt-9 flex flex-wrap justify-center gap-1 rounded-full bg-well p-1">
+            {PLATFORM_ORDER.map((id) => {
+              const Icon = PLATFORM_ICONS[id];
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setPlatform(id);
+                    setError(null);
+                  }}
+                  aria-pressed={platform === id}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-full px-4 py-2 text-sm transition",
+                    platform === id
+                      ? "bg-white font-medium text-ink shadow-[0_1px_2px_rgba(42,42,39,.12)]"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {PLATFORMS[id].label}
+                </button>
+              );
+            })}
+          </div>
+        </Reveal>
 
-        <form
-          onSubmit={generate}
-          className="mt-3 flex w-full max-w-md items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-5 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition focus-within:ring-black/20"
-        >
-          <span className="shrink-0 text-[15px] text-muted/70">{config.prefix}</span>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={config.placeholder}
-            aria-label={`${config.label} handle`}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent text-[15px] font-medium outline-none focus-visible:outline-none placeholder:font-normal placeholder:text-black/25"
-          />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="flex shrink-0 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white transition hover:bg-black disabled:opacity-35"
+        <Reveal delay={240} className="w-full max-w-md">
+          <form
+            onSubmit={generate}
+            className="group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-5 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition focus-within:ring-black/20"
           >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Make card
-          </button>
-        </form>
+            <span className="shrink-0 text-[15px] text-muted/70">{config.prefix}</span>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={config.placeholder}
+              aria-label={`${config.label} handle`}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="min-w-0 flex-1 bg-transparent text-[15px] font-medium outline-none focus-visible:outline-none placeholder:font-normal placeholder:text-black/25"
+            />
+            <button
+              type="submit"
+              disabled={loading || !input.trim()}
+              className="flex shrink-0 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white transition hover:bg-black disabled:opacity-35"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Make card
+            </button>
+  
+            {/* Collaborator-style cursor pointing at the input; leaves once the user starts. */}
+            <div
+              aria-hidden
+              className={clsx(
+                "pointer-events-none absolute top-[54%] left-[31%] transition-opacity duration-300 group-focus-within:opacity-0",
+                input && "opacity-0",
+              )}
+            >
+              <div className="cursor-nudge flex items-start">
+                <svg viewBox="0 0 20 22" className="h-[22px] w-5 drop-shadow-[0_2px_4px_rgba(60,40,140,.35)]">
+                  <path
+                    d="M2 2 L2 18 L6.5 13.8 L9.6 20.2 L12.4 18.9 L9.4 12.6 L15.6 12.4 Z"
+                    fill="#7c5cff"
+                    stroke="#fff"
+                    strokeWidth="1.6"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="mt-4 -ml-1 rounded-full rounded-tl-sm bg-[#7c5cff] px-2.5 py-1 text-xs font-medium whitespace-nowrap text-white shadow-[0_4px_12px_-4px_rgba(60,40,140,.5)]">
+                  Your {config.label} handle goes here
+                </span>
+              </div>
+            </div>
+          </form>
+        </Reveal>
 
-        <p className={clsx("mt-3 min-h-5 text-sm", error ? "text-red-600" : "text-muted/80")}>
-          {error ??
-            (config.fetchable
-              ? `We pull your public ${config.label} profile. Nothing is stored.`
-              : `${config.label} keeps profiles private, so you'll fill in the numbers yourself.`)}
-        </p>
+        <Reveal delay={320}>
+          <p className={clsx("mt-5 min-h-5 text-sm", error ? "text-red-600" : "text-muted/80")}>
+            {error ??
+              (config.fetchable
+                ? `We pull your public ${config.label} profile. Nothing is stored.`
+                : `${config.label} keeps profiles private, so you'll fill in the numbers yourself.`)}
+          </p>
+        </Reveal>
       </section>
 
       <section ref={studioRef} id="studio" className="mx-auto mt-10 w-full max-w-7xl scroll-mt-4 px-2 sm:px-4">
-        <div
-          className="rounded-[28px] p-2 sm:p-6 lg:p-8"
-          style={{
-            background:
-              "radial-gradient(ellipse 70% 80% at 0% 0%, #e6dcff 0%, transparent 60%), radial-gradient(ellipse 70% 80% at 100% 100%, #fbd9e8 0%, transparent 60%), #efebf7",
-          }}
-        >
-          <div className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]">
-            <div className="flex items-center gap-3 border-b border-black/[.06] px-4 py-3">
-              <div className="flex gap-1.5" aria-hidden>
-                <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-                <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
-                <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+        <Reveal>
+          <div
+            className="rounded-[28px] p-2 sm:p-6 lg:p-8"
+            style={{
+              background:
+                "radial-gradient(ellipse 70% 80% at 0% 0%, #e6dcff 0%, transparent 60%), radial-gradient(ellipse 70% 80% at 100% 100%, #fbd9e8 0%, transparent 60%), #efebf7",
+            }}
+          >
+            <div className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]">
+              <div className="flex items-center gap-3 border-b border-black/[.06] px-4 py-3">
+                <div className="flex gap-1.5" aria-hidden>
+                  <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+                  <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+                  <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+                </div>
+                <span className="flex-1 truncate text-center font-mono text-xs text-muted">
+                  kado-{profile.handle}-{format.id}.png · {format.width * EXPORT_SCALE}×{format.height * EXPORT_SCALE}
+                </span>
+                <button
+                  type="button"
+                  title="Back to the sample card"
+                  onClick={() => {
+                    showProfile(SAMPLE);
+                    setInput("");
+                  }}
+                  className="text-muted transition hover:text-ink"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <span className="flex-1 truncate text-center font-mono text-xs text-muted">
-                kado-{profile.handle}-{format.id}.png · {format.width * EXPORT_SCALE}×{format.height * EXPORT_SCALE}
-              </span>
-              <button
-                type="button"
-                title="Back to the sample card"
-                onClick={() => {
-                  showProfile(SAMPLE);
-                  setInput("");
-                }}
-                className="text-muted transition hover:text-ink"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </button>
-            </div>
 
-            {/* Fixed-height body: the inspector scrolls on its own instead of stretching the window. */}
-            <div className="grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
-              <div className="flex h-[340px] bg-[#f6f5f1] p-4 sm:h-[460px] sm:p-6 lg:h-full lg:p-8">
-                <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
-                  <div
-                    className="relative shrink-0 overflow-hidden rounded-xl ring-1 ring-black/[.06]"
-                    style={{
-                      width: format.width * previewScale,
-                      height: format.height * previewScale,
-                      visibility: previewScale ? "visible" : "hidden",
-                    }}
-                  >
+              {/* Fixed-height body: the inspector scrolls on its own instead of stretching the window. */}
+              <div className="grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
+                <div className="flex h-[340px] bg-[#f6f5f1] p-4 sm:h-[460px] sm:p-6 lg:h-full lg:p-8">
+                  <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     <div
-                      className="absolute top-0 left-0 origin-top-left"
-                      style={{ transform: `scale(${previewScale})` }}
+                      className="relative shrink-0 overflow-hidden rounded-xl ring-1 ring-black/[.06]"
+                      style={{
+                        width: format.width * previewScale,
+                        height: format.height * previewScale,
+                        visibility: previewScale ? "visible" : "hidden",
+                      }}
                     >
                       <div
-                        ref={canvasRef}
-                        className="flex items-center justify-center"
-                        style={{ width: format.width, height: format.height, ...backdropStyle(backdrop) }}
+                        className="absolute top-0 left-0 origin-top-left"
+                        style={{ transform: `scale(${previewScale})` }}
                       >
-                        <div key={generation} className="card-in">
-                          <ProfileCard profile={profile} options={options} width={cardWidth(options.size, format)} />
+                        <div
+                          ref={canvasRef}
+                          className="flex items-center justify-center"
+                          style={{ width: format.width, height: format.height, ...backdropStyle(backdrop) }}
+                        >
+                          <div key={generation} className="card-in">
+                            <ProfileCard profile={profile} options={options} width={cardWidth(options.size, format)} />
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <aside className="flex min-h-0 flex-col border-t border-black/[.06] text-sm lg:border-t-0 lg:border-l">
-                <div className="min-h-0 flex-1 divide-y divide-black/[.06] overflow-y-auto overscroll-contain">
-                  <InspectorSection title="Style">
-                    <Segmented
-                      value={options.style}
-                      values={STYLES.map((s) => s.id)}
-                      labels={Object.fromEntries(STYLES.map((s) => [s.id, s.label]))}
-                      onChange={(style) => setOptions((o) => ({ ...o, style }))}
-                    />
-                  </InspectorSection>
-
-                  <InspectorSection title="Format">
-                    <div className="flex flex-col gap-0.5">
-                      {FORMATS.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          aria-pressed={f.id === format.id}
-                          onClick={() => setFormatId(f.id)}
-                          className={clsx(
-                            "flex items-center gap-3 rounded-lg px-2 py-1.5 text-left transition",
-                            f.id === format.id ? "bg-well text-ink" : "text-muted hover:text-ink",
-                          )}
-                        >
-                          <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center">
-                            <span
-                              className={clsx(
-                                "block rounded-[2px] border-[1.5px]",
-                                f.id === format.id ? "border-ink" : "border-current",
-                              )}
-                              style={
-                                f.width >= f.height
-                                  ? { width: 18, height: Math.round((18 * f.height) / f.width) }
-                                  : { height: 18, width: Math.round((18 * f.width) / f.height) }
-                              }
-                            />
-                          </span>
-                          <span className="flex-1">{f.label}</span>
-                          <span className="font-mono text-xs text-muted">{f.ratio}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </InspectorSection>
-
-                  <InspectorSection title="Background">
-                    <div className="grid grid-cols-8 gap-1.5 lg:grid-cols-4">
-                      {BACKDROPS.map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          title={b.label}
-                          aria-label={`${b.label} background`}
-                          aria-pressed={"id" in backdrop && backdrop.id === b.id}
-                          onClick={() => setBackdrop(b)}
-                          className={clsx(
-                            "aspect-square rounded-lg ring-offset-2 transition",
-                            "id" in backdrop && backdrop.id === b.id
-                              ? "ring-2 ring-ink"
-                              : "ring-1 ring-black/10 hover:ring-black/25",
-                          )}
-                          style={backdropStyle(b)}
-                        />
-                      ))}
-                      <label
-                        title="Upload your own"
-                        className={clsx(
-                          "flex aspect-square cursor-pointer items-center justify-center rounded-lg text-muted ring-offset-2 transition hover:text-ink",
-                          "upload" in backdrop ? "ring-2 ring-ink" : "border border-dashed border-black/20",
-                        )}
-                      >
-                        <ImagePlus className="h-4 w-4" />
-                        <span className="sr-only">Upload a background image</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) setBackdrop({ upload: await readFile(file) });
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </InspectorSection>
-
-                  <InspectorSection title="Layout">
-                    <div className="grid grid-cols-2 gap-2">
+                <aside className="flex min-h-0 flex-col border-t border-black/[.06] text-sm lg:border-t-0 lg:border-l">
+                  <div className="min-h-0 flex-1 divide-y divide-black/[.06] overflow-y-auto overscroll-contain">
+                    <InspectorSection title="Style">
                       <Segmented
-                        value={options.size}
-                        values={["S", "M", "L"] as CardSize[]}
-                        onChange={(size) => setOptions((o) => ({ ...o, size }))}
+                        value={options.style}
+                        values={STYLES.map((s) => s.id)}
+                        labels={Object.fromEntries(STYLES.map((s) => [s.id, s.label]))}
+                        onChange={(style) => setOptions((o) => ({ ...o, style }))}
                       />
-                      <Segmented
-                        value={options.theme}
-                        values={["light", "dark"] as const}
-                        labels={{ light: "Light", dark: "Dark" }}
-                        onChange={(theme) => setOptions((o) => ({ ...o, theme }))}
-                      />
-                    </div>
-                  </InspectorSection>
+                    </InspectorSection>
 
-                  <InspectorSection title="Show">
-                    <div className="flex flex-col gap-0.5">
-                      {profile.stats.map((s) => (
-                        <Switch
-                          key={s.key}
-                          label={capitalize(s.label)}
-                          checked={options.visibleStats.includes(s.key)}
-                          onChange={(on) =>
-                            setOptions((o) => ({
-                              ...o,
-                              visibleStats: on
-                                ? [...o.visibleStats, s.key]
-                                : o.visibleStats.filter((k) => k !== s.key),
-                            }))
-                          }
-                        />
-                      ))}
-                      <Switch
-                        label="Verified badge"
-                        checked={options.showVerified}
-                        onChange={(showVerified) => setOptions((o) => ({ ...o, showVerified }))}
-                      />
-                      {cardConfig.hasBanner && options.style === "native" && (
-                        <Switch
-                          label="Banner"
-                          checked={options.showBanner}
-                          onChange={(showBanner) => setOptions((o) => ({ ...o, showBanner }))}
-                        />
-                      )}
-                      <Switch
-                        label={`${cardConfig.label} logo`}
-                        checked={options.showPlatformMark}
-                        onChange={(showPlatformMark) => setOptions((o) => ({ ...o, showPlatformMark }))}
-                      />
-                    </div>
-                  </InspectorSection>
-
-                  <details className="group" open={!cardConfig.fetchable}>
-                    <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 font-medium [&::-webkit-details-marker]:hidden">
-                      Edit details
-                      <ChevronDown className="h-4 w-4 text-muted transition group-open:rotate-180" />
-                    </summary>
-                    <div className="flex flex-col gap-3 px-5 pb-5">
-                      <Field label="Name" value={profile.name} onChange={(name) => updateProfile({ name })} />
-                      <Field
-                        label={profile.platform === "linkedin" ? "Headline" : "Bio"}
-                        value={profile.bio}
-                        multiline
-                        onChange={(bio) => updateProfile({ bio })}
-                      />
-                      <div className="grid grid-cols-3 gap-2">
-                        {profile.stats.map((s) => (
-                          <Field
-                            key={s.key}
-                            label={capitalize(s.label)}
-                            type="number"
-                            value={String(s.value)}
-                            onChange={(v) => updateStat(s.key, Math.max(0, Number(v) || 0))}
-                          />
+                    <InspectorSection title="Format">
+                      <div className="flex flex-col gap-0.5">
+                        {FORMATS.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            aria-pressed={f.id === format.id}
+                            onClick={() => setFormatId(f.id)}
+                            className={clsx(
+                              "flex items-center gap-3 rounded-lg px-2 py-1.5 text-left transition",
+                              f.id === format.id ? "bg-well text-ink" : "text-muted hover:text-ink",
+                            )}
+                          >
+                            <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center">
+                              <span
+                                className={clsx(
+                                  "block rounded-[2px] border-[1.5px]",
+                                  f.id === format.id ? "border-ink" : "border-current",
+                                )}
+                                style={
+                                  f.width >= f.height
+                                    ? { width: 18, height: Math.round((18 * f.height) / f.width) }
+                                    : { height: 18, width: Math.round((18 * f.width) / f.height) }
+                                }
+                              />
+                            </span>
+                            <span className="flex-1">{f.label}</span>
+                            <span className="font-mono text-xs text-muted">{f.ratio}</span>
+                          </button>
                         ))}
                       </div>
-                      <div className="flex gap-2">
-                        <ImageInput label="Photo" onChange={(avatarUrl) => updateProfile({ avatarUrl })} />
-                        {cardConfig.hasBanner && (
-                          <ImageInput label="Banner" onChange={(bannerUrl) => updateProfile({ bannerUrl })} />
-                        )}
-                      </div>
-                      <Switch
-                        label="Account is verified"
-                        checked={profile.verified}
-                        onChange={(verified) => updateProfile({ verified })}
-                      />
-                    </div>
-                  </details>
-                </div>
+                    </InspectorSection>
 
-                <div className="flex gap-2 border-t border-black/[.06] bg-white p-4">
-                  <button
-                    type="button"
-                    onClick={() => exportImage("download")}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 font-medium text-white transition hover:bg-black"
-                  >
-                    {exportState === "saving" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : exportState === "saved" ? (
-                      <Check className="h-4 w-4" />
-                    ) : (
-                      <Download className="h-4 w-4" />
-                    )}
-                    {exportState === "saved" ? "Downloaded" : "Download"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportImage("copy")}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white px-4 py-2.5 font-medium ring-1 ring-black/10 transition hover:bg-well"
-                  >
-                    {exportState === "copying" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : exportState === "copied" ? (
-                      <Check className="h-4 w-4 text-emerald-600" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                    {exportState === "copied" ? "Copied" : "Copy"}
-                  </button>
-                </div>
-              </aside>
+                    <InspectorSection title="Background">
+                      <div className="grid grid-cols-8 gap-1.5 lg:grid-cols-4">
+                        {BACKDROPS.map((b) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            title={b.label}
+                            aria-label={`${b.label} background`}
+                            aria-pressed={"id" in backdrop && backdrop.id === b.id}
+                            onClick={() => setBackdrop(b)}
+                            className={clsx(
+                              "aspect-square rounded-lg ring-offset-2 transition",
+                              "id" in backdrop && backdrop.id === b.id
+                                ? "ring-2 ring-ink"
+                                : "ring-1 ring-black/10 hover:ring-black/25",
+                            )}
+                            style={backdropStyle(b)}
+                          />
+                        ))}
+                        <label
+                          title="Upload your own"
+                          className={clsx(
+                            "flex aspect-square cursor-pointer items-center justify-center rounded-lg text-muted ring-offset-2 transition hover:text-ink",
+                            "upload" in backdrop ? "ring-2 ring-ink" : "border border-dashed border-black/20",
+                          )}
+                        >
+                          <ImagePlus className="h-4 w-4" />
+                          <span className="sr-only">Upload a background image</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) setBackdrop({ upload: await readFile(file) });
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </InspectorSection>
+
+                    <InspectorSection title="Layout">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Segmented
+                          value={options.size}
+                          values={["S", "M", "L"] as CardSize[]}
+                          onChange={(size) => setOptions((o) => ({ ...o, size }))}
+                        />
+                        <Segmented
+                          value={options.theme}
+                          values={["light", "dark"] as const}
+                          labels={{ light: "Light", dark: "Dark" }}
+                          onChange={(theme) => setOptions((o) => ({ ...o, theme }))}
+                        />
+                      </div>
+                    </InspectorSection>
+
+                    <InspectorSection title="Show">
+                      <div className="flex flex-col gap-0.5">
+                        {profile.stats.map((s) => (
+                          <Switch
+                            key={s.key}
+                            label={capitalize(s.label)}
+                            checked={options.visibleStats.includes(s.key)}
+                            onChange={(on) =>
+                              setOptions((o) => ({
+                                ...o,
+                                visibleStats: on
+                                  ? [...o.visibleStats, s.key]
+                                  : o.visibleStats.filter((k) => k !== s.key),
+                              }))
+                            }
+                          />
+                        ))}
+                        <Switch
+                          label="Verified badge"
+                          checked={options.showVerified}
+                          onChange={(showVerified) => setOptions((o) => ({ ...o, showVerified }))}
+                        />
+                        {cardConfig.hasBanner && options.style === "native" && (
+                          <Switch
+                            label="Banner"
+                            checked={options.showBanner}
+                            onChange={(showBanner) => setOptions((o) => ({ ...o, showBanner }))}
+                          />
+                        )}
+                        <Switch
+                          label={`${cardConfig.label} logo`}
+                          checked={options.showPlatformMark}
+                          onChange={(showPlatformMark) => setOptions((o) => ({ ...o, showPlatformMark }))}
+                        />
+                      </div>
+                    </InspectorSection>
+
+                    <details className="group" open={!cardConfig.fetchable}>
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 font-medium [&::-webkit-details-marker]:hidden">
+                        Edit details
+                        <ChevronDown className="h-4 w-4 text-muted transition group-open:rotate-180" />
+                      </summary>
+                      <div className="flex flex-col gap-3 px-5 pb-5">
+                        <Field label="Name" value={profile.name} onChange={(name) => updateProfile({ name })} />
+                        <Field
+                          label={profile.platform === "linkedin" ? "Headline" : "Bio"}
+                          value={profile.bio}
+                          multiline
+                          onChange={(bio) => updateProfile({ bio })}
+                        />
+                        <div className="grid grid-cols-3 gap-2">
+                          {profile.stats.map((s) => (
+                            <Field
+                              key={s.key}
+                              label={capitalize(s.label)}
+                              type="number"
+                              value={String(s.value)}
+                              onChange={(v) => updateStat(s.key, Math.max(0, Number(v) || 0))}
+                            />
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <ImageInput label="Photo" onChange={(avatarUrl) => updateProfile({ avatarUrl })} />
+                          {cardConfig.hasBanner && (
+                            <ImageInput label="Banner" onChange={(bannerUrl) => updateProfile({ bannerUrl })} />
+                          )}
+                        </div>
+                        <Switch
+                          label="Account is verified"
+                          checked={profile.verified}
+                          onChange={(verified) => updateProfile({ verified })}
+                        />
+                      </div>
+                    </details>
+                  </div>
+
+                  <div className="flex gap-2 border-t border-black/[.06] bg-white p-4">
+                    <button
+                      type="button"
+                      onClick={() => exportImage("download")}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 font-medium text-white transition hover:bg-black"
+                    >
+                      {exportState === "saving" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : exportState === "saved" ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      {exportState === "saved" ? "Downloaded" : "Download"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportImage("copy")}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white px-4 py-2.5 font-medium ring-1 ring-black/10 transition hover:bg-well"
+                    >
+                      {exportState === "copying" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : exportState === "copied" ? (
+                        <Check className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                      {exportState === "copied" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </aside>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex items-start justify-center gap-2 text-sm text-muted">
-          <svg viewBox="0 0 40 28" className="mt-[-6px] h-7 w-10 shrink-0" fill="none" aria-hidden>
-            <path
-              d="M36 24C24 25 12 20 7 6m0 0L3 12m4-6 6 3"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span>Sized to show uncropped in the feed, exported at 2× for sharp text.</span>
-        </div>
+        </Reveal>
+
+        <Reveal delay={120}>
+          <div className="mt-4 flex items-start justify-center gap-2 text-sm text-muted">
+            <svg viewBox="0 0 40 28" className="mt-[-6px] h-7 w-10 shrink-0" fill="none" aria-hidden>
+              <path
+                d="M36 24C24 25 12 20 7 6m0 0L3 12m4-6 6 3"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>Sized to show uncropped in the feed, exported at 2× for sharp text.</span>
+          </div>
+        </Reveal>
       </section>
     </>
   );

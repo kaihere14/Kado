@@ -80,7 +80,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     label: "Instagram",
     prefix: "instagram.com/",
     placeholder: "your.handle",
-    fetchable: false,
+    fetchable: true,
     stats: [
       { key: "posts", label: "posts" },
       { key: "followers", label: "followers" },
@@ -91,7 +91,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
   },
 };
 
-export const PLATFORM_ORDER: PlatformId[] = ["x", "linkedin", "github", "instagram"];
+export const PLATFORM_ORDER: PlatformId[] = ["x", "github", "instagram", "linkedin"];
 
 export function isPlatformId(value: string): value is PlatformId {
   return value in PLATFORMS;

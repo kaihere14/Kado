@@ -98,9 +98,71 @@ async function fetchGitHub(handle: string): Promise<Profile> {
   };
 }
 
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/** "687M" → 687000000, "8,612" → 8612, "1.2K" → 1200 */
+function parseCount(text: string): number {
+  const match = text.replace(/,/g, "").match(/^([\d.]+)([KMB])?$/i);
+  if (!match) return 0;
+  const multiplier = { K: 1e3, M: 1e6, B: 1e9 }[match[2]?.toUpperCase() as "K" | "M" | "B"] ?? 1;
+  return Math.round(parseFloat(match[1]) * multiplier);
+}
+
+function metaContent(html: string, property: string): string | null {
+  const match = html.match(new RegExp(`<meta property="${property}" content="([^"]*)"`));
+  return match ? decodeEntities(match[1]) : null;
+}
+
+async function fetchInstagram(handle: string): Promise<Profile> {
+  // Instagram has no public API; its profile page carries counts in Open Graph tags for public accounts.
+  // The bio isn't exposed there, so the user adds it by hand.
+  const res = await fetch(`https://www.instagram.com/${encodeURIComponent(handle)}/`, {
+    headers: { "User-Agent": "kado/0.1 (profile card generator)" },
+    next: { revalidate: 3600 },
+  });
+  if (res.status === 404) throw new ProfileError("No Instagram account with that handle.", 404);
+  if (!res.ok) throw new ProfileError("Couldn't reach Instagram right now. Try again.", 502);
+
+  const html = await res.text();
+  const description = metaContent(html, "og:description");
+  const counts = description?.match(/^([\d.,]+[KMB]?) Followers, ([\d.,]+[KMB]?) Following, ([\d.,]+[KMB]?) Posts/i);
+  if (!counts) {
+    throw new ProfileError("Couldn't read that Instagram profile. It may be private, so fill in the details yourself.", 404);
+  }
+
+  const title = metaContent(html, "og:title") ?? "";
+  const name = title.match(/^(.*?)\s*\(@/)?.[1]?.trim();
+
+  return {
+    platform: "instagram",
+    handle,
+    name: name || handle,
+    bio: "",
+    avatarUrl: metaContent(html, "og:image"),
+    bannerUrl: null,
+    verified: false,
+    url: `https://www.instagram.com/${handle}/`,
+    stats: [
+      { key: "posts", label: "posts", value: parseCount(counts[3]) },
+      { key: "followers", label: "followers", value: parseCount(counts[1]) },
+      { key: "following", label: "following", value: parseCount(counts[2]) },
+    ],
+  };
+}
+
 const FETCHERS: Partial<Record<PlatformId, (handle: string) => Promise<Profile>>> = {
   x: fetchX,
   github: fetchGitHub,
+  instagram: fetchInstagram,
 };
 
 export async function fetchProfile(platform: PlatformId, handle: string): Promise<Profile> {
