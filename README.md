@@ -39,7 +39,7 @@ kado makes a clean, share-ready image of your profile. Type a handle, and it pul
 | Resolution | Every export at 2×, for example 2400 × 1350 for an X post |
 | Backgrounds | Five grainy gradients, plain black, six soft tones, or your own image |
 | Accounts | None. Nothing is saved on a server |
-
+| Design skills | 12 Principles of Animation, Better UI, Emil Design Engineering |
 ## Card styles
 
 <table>
@@ -104,13 +104,13 @@ kado has no accounts, database or analytics. A handle is sent only to fetch that
 
 - [x] X, GitHub and Instagram profiles
 - [x] Feed-sized exports at 2×
+- [x] Polished UI interactions and accessibility
 - [ ] Shareable links such as `/x/handle` that open straight into the studio
 - [ ] Sign in with LinkedIn to fill in your name and photo
 - [ ] More card styles
 - [ ] A dark theme for the site itself
 
 Ideas are welcome in [issues](https://github.com/kaihere14/Kado/issues).
-
 ## Contributing
 
 Contributions are welcome. Fork the repository, create a branch, and open a pull request. Run `pnpm lint` and `pnpm exec tsc --noEmit` before submitting.
@@ -122,7 +122,7 @@ Contributions are welcome. Fork the repository, create a branch, and open a pull
 - [html-to-image](https://github.com/bubkoo/html-to-image) for the PNG export
 - [Inter](https://rsms.me/inter/) and [Geist Mono](https://vercel.com/font)
 - [Lucide](https://lucide.dev) icons
-
+- [Animation & UI design skills](https://github.com/raphaelsalaja/skill) (12 Principles of Animation, Better UI, Emil Design Engineering)
 ## About the name
 
 Kado comes from カード (kādo), Japanese for "card". The logo puts the four platforms on one: an X whose second stroke curves like a git branch, LinkedIn's dot and Instagram's lens, all inside a rounded card.
