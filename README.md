@@ -34,12 +34,11 @@ kado makes a clean, share-ready image of your profile. Type a handle, and it pul
 | | |
 |---|---|
 | Platforms | X, GitHub and Instagram pulled automatically; LinkedIn filled in by hand |
-| Card styles | Native, Minimal and Ticket, each in light or dark |
+| Card styles | Native, Minimal, Ticket and Rectangular, each in light or dark |
 | Export sizes | X post 16:9, LinkedIn 1.91:1, Instagram 4:5, Square 1:1, GitHub social preview 2:1 |
 | Resolution | Every export at 2×, for example 2400 × 1350 for an X post |
 | Backgrounds | Five grainy gradients, plain black, six soft tones, or your own image |
 | Accounts | None. Nothing is saved on a server |
-
 ## Card styles
 
 <table>
@@ -55,6 +54,7 @@ kado makes a clean, share-ready image of your profile. Type a handle, and it pul
   </tr>
 </table>
 
+Rectangular cards with animated selectors are now available alongside the existing styles.
 ## Getting started
 
 kado needs Node.js 20 or newer and [pnpm](https://pnpm.io).
