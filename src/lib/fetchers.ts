@@ -52,7 +52,7 @@ async function fetchX(handle: string): Promise<Profile> {
     stats: [
       { key: "followers", label: "followers", value: user.followers },
       { key: "following", label: "following", value: user.following },
-      { key: "posts", label: "posts", value: user.tweets },
+      { key: "posts", label: "posts", value: user.tweets }
     ],
   };
 }

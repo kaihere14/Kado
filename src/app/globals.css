@@ -6,8 +6,17 @@
   --color-ink: #2a2a27;
   --color-muted: #6f6d68;
   --color-marker: #ffe2a8;
+  --color-focus: #8b7cf6;
   --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* The built-in curves are too soft to feel intentional, so every transition uses these. */
+@theme {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 body {
@@ -23,9 +32,34 @@ body {
 
 /* Layered so utilities like outline-none can override it. */
 @layer base {
+  html {
+    color-scheme: light;
+  }
+
   :focus-visible {
-    outline: 2px solid #8b7cf6;
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+/* Pressable controls give slightly under the finger. Pair with a transition that names `scale`. */
+@utility press {
+  -webkit-tap-highlight-color: transparent;
+
+  @media (prefers-reduced-motion: no-preference) {
+    &:active:not(:disabled) {
+      scale: 0.96;
+    }
   }
 }
 
@@ -48,20 +82,39 @@ body {
   background-size: 13px 13px, 17px 17px, auto;
 }
 
-/* A newly generated card settles onto the canvas. */
-@keyframes card-in {
+/*
+ * Entrances keep their hidden state in the `from` keyframe, so nothing is left invisible if an
+ * animation never runs. Everyone gets the opacity fade; movement and blur join it only without
+ * the reduced-motion preference.
+ */
+@keyframes fade-in {
   from {
-    transform: translateY(10px) scale(0.97);
     opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
   }
 }
 
-.card-in {
-  animation: card-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(4px);
+  }
+}
+
+/* Phones: skip the blur, which is costly to animate on large sections. */
+@keyframes fade-in-up-light {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* A newly generated card settles onto the canvas. */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
 }
 
 /* The hint cursor drifts toward the handle input, like someone about to click it. */
@@ -75,58 +128,38 @@ body {
   }
 }
 
-.cursor-nudge {
-  animation: cursor-nudge 2.4s ease-in-out infinite;
+.card-in {
+  animation: fade-in 300ms var(--ease-out) both;
 }
 
-/* Sections rise, fade in and come into focus the first time they're scrolled to. */
-@keyframes reveal-in {
-  from {
-    opacity: 0;
-    filter: blur(10px);
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: none;
-  }
-}
-
-.reveal {
-  opacity: 0;
-}
-
+/* Sections fade in the first time they're scrolled to. */
 .reveal.is-visible {
-  animation: reveal-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: fade-in 300ms var(--ease-out) both;
 }
 
-/* Phones: skip the blur, which is costly to animate on large sections. */
-@keyframes reveal-in-light {
-  from {
+/* Only hide what script will reveal, so the page still reads with JavaScript off. */
+@media (scripting: enabled) {
+  .reveal:not(.is-visible) {
     opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 
-@media (max-width: 639px) {
+@media (prefers-reduced-motion: no-preference) {
+  .card-in {
+    animation-name: card-in;
+  }
+
   .reveal.is-visible {
-    animation-name: reveal-in-light;
+    animation-name: fade-in-up;
+  }
+
+  .cursor-nudge {
+    animation: cursor-nudge 2.4s var(--ease-in-out) infinite;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .card-in,
-  .cursor-nudge,
+@media (prefers-reduced-motion: no-preference) and (max-width: 639px) {
   .reveal.is-visible {
-    animation: none;
-  }
-
-  .reveal {
-    opacity: 1;
+    animation-name: fade-in-up-light;
   }
 }

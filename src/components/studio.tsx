@@ -66,6 +66,10 @@ function capitalize(text: string) {
   return text[0].toUpperCase() + text.slice(1);
 }
 
+// File inputs are visually hidden inside their label, so the label shows the keyboard focus ring.
+const FILE_FOCUS =
+  "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus";
+
 export function Studio() {
   const [platform, setPlatform] = useState<PlatformId>("x");
   const [input, setInput] = useState("");
@@ -81,6 +85,9 @@ export function Studio() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const studioRef = useRef<HTMLElement>(null);
+  const exportResetRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(exportResetRef.current), []);
 
   const format = getFormat(formatId);
   // Fit the full-size frame inside the preview area, whichever side is tighter.
@@ -101,6 +108,8 @@ export function Studio() {
 
   const config = PLATFORMS[platform];
   const cardConfig = PLATFORMS[profile.platform];
+  // Hidden spinners stop, so nothing animates off-screen while the studio is idle.
+  const spinning = exportState !== "idle";
 
   function showProfile(next: Profile) {
     setProfile(next);
@@ -168,6 +177,8 @@ export function Studio() {
     const node = canvasRef.current;
     if (!node) return;
     const opts = { pixelRatio: EXPORT_SCALE, cacheBust: true, width: format.width, height: format.height };
+    // A second export must not be cut short by the first one's pending reset.
+    clearTimeout(exportResetRef.current);
     try {
       if (mode === "copy") {
         setExportState("copying");
@@ -196,30 +207,31 @@ export function Studio() {
       setExportState("idle");
       return;
     }
-    setTimeout(() => setExportState("idle"), 1800);
+    exportResetRef.current = setTimeout(() => setExportState("idle"), 1800);
   }
 
   return (
     <>
       <section className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 pt-14 text-center sm:pt-20">
-        <Reveal delay={0}>
+        {/* Above the fold, so the entrance plays on first paint, staggered 50ms per chunk. */}
+        <Reveal immediate>
           <h1 className="text-[40px] leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-[60px]">
             Your profile, as a card worth posting.
           </h1>
         </Reveal>
-        <Reveal delay={80}>
+        <Reveal immediate delay={50}>
           <p className="mt-5 max-w-xl text-lg leading-relaxed tracking-[-0.015em] text-muted sm:text-xl">
             Kado turns an X, GitHub or Instagram handle into a <span className="marker whitespace-nowrap">share-ready card</span> in
             seconds. No sign-up, no design tool.
           </p>
         </Reveal>
 
-        <Reveal delay={160} className="w-full max-w-md sm:w-auto sm:max-w-none">
+        <Reveal immediate delay={100} className="w-full max-w-md sm:w-auto sm:max-w-none">
           {/* Four equal tabs on phones so they never wrap; a single pill row from sm up. */}
           <div className="relative mt-9 grid w-full grid-cols-4 rounded-[20px] bg-well p-1 sm:w-[440px] sm:rounded-full">
             <span
               aria-hidden
-              className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.12)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:rounded-full"
+              className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.12)] transition-transform duration-200 ease-in-out motion-reduce:transition-none sm:rounded-full"
               style={{
                 width: "calc((100% - 8px) / 4)",
                 transform: `translateX(${PLATFORM_ORDER.indexOf(platform) * 100}%)`,
@@ -237,13 +249,13 @@ export function Studio() {
                   }}
                   aria-pressed={platform === id}
                   className={clsx(
-                    "relative z-10 flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition-colors sm:flex-row sm:gap-2 sm:rounded-full sm:px-4 sm:text-sm",
+                    "relative z-10 flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition-[color] sm:flex-row sm:gap-2 sm:rounded-full sm:px-4 sm:text-sm",
                     platform === id
                       ? "font-medium text-ink"
                       : "text-muted hover:text-ink",
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
                   {PLATFORMS[id].label}
                 </button>
               );
@@ -251,10 +263,11 @@ export function Studio() {
           </div>
         </Reveal>
 
-        <Reveal delay={240} className="w-full max-w-md">
+        <Reveal immediate delay={150} className="w-full max-w-md">
+          {/* The transparent border keeps an edge in forced-colors mode, which drops the ring. */}
           <form
             onSubmit={generate}
-            className="group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-4 sm:pl-5 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition focus-within:ring-black/20"
+            className="group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full border border-transparent bg-white py-1.5 pr-1.5 pl-4 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition-[box-shadow] focus-within:ring-black/20 sm:pl-5"
           >
             <span className="shrink-0 text-[14px] text-muted/70 sm:text-[15px]">{config.prefix}</span>
             <input
@@ -267,21 +280,25 @@ export function Studio() {
               spellCheck={false}
               className="min-w-0 flex-1 bg-transparent text-base font-medium sm:text-[15px] outline-none focus-visible:outline-none placeholder:font-normal placeholder:text-black/25"
             />
+            {/* The spinner cross-fades over the label instead of widening the button. */}
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="flex shrink-0 items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white sm:px-5 transition hover:bg-black disabled:opacity-35"
+              aria-busy={loading}
+              className="press grid shrink-0 place-items-center rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition-[background-color,opacity,scale] hover:bg-black disabled:opacity-35 sm:px-5"
             >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Make card
+              <span className={clsx("[grid-area:1/1] transition-opacity", loading && "opacity-0")}>Make card</span>
+              <span aria-hidden className={clsx("[grid-area:1/1] transition-opacity", !loading && "opacity-0")}>
+                <Loader2 className={clsx("h-4 w-4", loading && "animate-spin")} strokeWidth={2} absoluteStrokeWidth />
+              </span>
             </button>
-  
-            {/* Collaborator-style cursor pointing at the input; leaves once the user starts. */}
+
+            {/* Collaborator-style cursor pointing at the input; leaves faster than it returns. */}
             <div
               aria-hidden
               className={clsx(
-                "pointer-events-none absolute top-[54%] left-[31%] hidden transition-opacity duration-300 group-focus-within:opacity-0 sm:block",
-                input && "opacity-0",
+                "pointer-events-none absolute top-[54%] left-[31%] hidden transition-opacity group-focus-within:opacity-0 group-focus-within:duration-150 sm:block",
+                input ? "opacity-0 duration-150" : "duration-300",
               )}
             >
               <div className="cursor-nudge flex items-start">
@@ -302,8 +319,8 @@ export function Studio() {
           </form>
         </Reveal>
 
-        <Reveal delay={320}>
-          <p className={clsx("mt-5 min-h-5 text-sm", error ? "text-red-600" : "text-muted/80")}>
+        <Reveal immediate delay={200}>
+          <p aria-live="polite" className={clsx("mt-5 min-h-5 text-sm", error ? "text-red-600" : "text-muted")}>
             {error ??
               (config.fetchable
                 ? `We pull your public ${config.label} profile. Nothing is stored.`
@@ -313,15 +330,17 @@ export function Studio() {
       </section>
 
       <section ref={studioRef} id="studio" className="mx-auto mt-10 w-full max-w-7xl scroll-mt-4 px-2 sm:px-4">
+        <h2 className="sr-only">Card studio</h2>
         <Reveal>
+          {/* Outer radius = window radius (16) + padding (8) on phones; from sm the padding passes 24px and the two read as separate surfaces. */}
           <div
-            className="rounded-[28px] p-2 sm:p-6 lg:p-8"
+            className="rounded-3xl p-2 sm:rounded-[28px] sm:p-7 lg:p-8"
             style={{
               background:
                 "radial-gradient(ellipse 70% 80% at 0% 0%, #e6dcff 0%, transparent 60%), radial-gradient(ellipse 70% 80% at 100% 100%, #fbd9e8 0%, transparent 60%), #efebf7",
             }}
           >
-            <div className="overflow-clip rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]">
+            <div className="overflow-clip rounded-2xl border border-transparent bg-white shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]">
               <div className="flex items-center gap-3 border-b border-black/[.06] px-4 py-3">
                 <div className="flex gap-1.5" aria-hidden>
                   <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
@@ -334,13 +353,14 @@ export function Studio() {
                 <button
                   type="button"
                   title="Back to the sample card"
+                  aria-label="Back to the sample card"
                   onClick={() => {
                     showProfile(SAMPLE);
                     setInput("");
                   }}
-                  className="text-muted transition hover:text-ink"
+                  className="press -m-1.5 rounded-md p-1.5 text-muted transition-[color,scale] hover:text-ink"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} absoluteStrokeWidth />
                 </button>
               </div>
 
@@ -349,8 +369,9 @@ export function Studio() {
               <div className="flex flex-col lg:grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
                 <div className="preview-surface sticky top-0 z-10 flex h-[250px] border-b border-black/[.06] p-4 sm:h-[400px] sm:p-6 lg:static lg:h-full lg:border-b-0 lg:p-8">
                   <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
+                    {/* Outlined like an image: an inset hairline that never changes the frame's size. */}
                     <div
-                      className="relative shrink-0 overflow-hidden rounded-xl ring-1 ring-black/[.06]"
+                      className="relative shrink-0 overflow-hidden rounded-xl outline-1 -outline-offset-1 outline-black/10"
                       style={{
                         width: format.width * previewScale,
                         height: format.height * previewScale,
@@ -366,7 +387,8 @@ export function Studio() {
                           className="flex items-center justify-center"
                           style={{ width: format.width, height: format.height, ...backdropStyle(backdrop) }}
                         >
-                          <div key={generation} className="card-in">
+                          {/* Only freshly generated cards settle in; the sample shows without a second entrance. */}
+                          <div key={generation} className={clsx(generation > 0 && "card-in")}>
                             <ProfileCard profile={profile} options={options} width={cardWidth(options.size, format)} />
                           </div>
                         </div>
@@ -396,7 +418,7 @@ export function Studio() {
                             aria-pressed={f.id === format.id}
                             onClick={() => setFormatId(f.id)}
                             className={clsx(
-                              "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition lg:py-1.5",
+                              "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-[color,background-color] lg:py-1.5",
                               f.id === format.id ? "bg-well text-ink" : "text-muted hover:text-ink",
                             )}
                           >
@@ -431,7 +453,7 @@ export function Studio() {
                             aria-pressed={"id" in backdrop && backdrop.id === b.id}
                             onClick={() => setBackdrop(b)}
                             className={clsx(
-                              "aspect-square rounded-lg ring-offset-2 transition",
+                              "press aspect-square rounded-lg ring-offset-2 transition-[box-shadow,scale]",
                               "id" in backdrop && backdrop.id === b.id
                                 ? "ring-2 ring-ink"
                                 : "ring-1 ring-black/10 hover:ring-black/25",
@@ -442,18 +464,21 @@ export function Studio() {
                         <label
                           title="Upload your own"
                           className={clsx(
-                            "flex aspect-square cursor-pointer items-center justify-center rounded-lg text-muted ring-offset-2 transition hover:text-ink",
+                            "press flex aspect-square cursor-pointer items-center justify-center rounded-lg text-muted ring-offset-2 transition-[color,box-shadow,scale] hover:text-ink",
+                            FILE_FOCUS,
                             "upload" in backdrop ? "ring-2 ring-ink" : "border border-dashed border-black/20",
                           )}
                         >
-                          <ImagePlus className="h-4 w-4" />
+                          <ImagePlus className="h-4 w-4" strokeWidth={1.5} absoluteStrokeWidth />
                           <span className="sr-only">Upload a background image</span>
                           <input
                             type="file"
                             accept="image/*"
-                            className="hidden"
+                            className="sr-only"
                             onChange={async (e) => {
                               const file = e.target.files?.[0];
+                              // Clear the value so picking the same file again still fires.
+                              e.target.value = "";
                               if (file) setBackdrop({ upload: await readFile(file) });
                             }}
                           />
@@ -525,7 +550,11 @@ export function Studio() {
                     <details className="group" open={!cardConfig.fetchable}>
                       <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 font-medium [&::-webkit-details-marker]:hidden">
                         Edit details
-                        <ChevronDown className="h-4 w-4 text-muted transition group-open:rotate-180" />
+                        <ChevronDown
+                          className="h-4 w-4 text-muted transition-[rotate] duration-200 ease-in-out group-open:rotate-180 motion-reduce:transition-none"
+                          strokeWidth={2}
+                          absoluteStrokeWidth
+                        />
                       </summary>
                       <div className="flex flex-col gap-3 px-5 pb-5">
                         <Field label="Name" value={profile.name} onChange={(name) => updateProfile({ name })} />
@@ -565,29 +594,31 @@ export function Studio() {
                     <button
                       type="button"
                       onClick={() => exportImage("download")}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 font-medium text-white transition hover:bg-black"
+                      className="press flex flex-1 items-center justify-center gap-2 rounded-full border border-transparent bg-ink px-4 py-2.5 font-medium text-white transition-[background-color,scale] hover:bg-black"
                     >
-                      {exportState === "saving" ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : exportState === "saved" ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
+                      <IconSwap
+                        active={exportState === "saving" ? "busy" : exportState === "saved" ? "done" : "idle"}
+                        icons={{
+                          idle: <Download className="h-4 w-4" strokeWidth={2} absoluteStrokeWidth />,
+                          busy: <Loader2 className={clsx("h-4 w-4", spinning && "animate-spin")} strokeWidth={2} absoluteStrokeWidth />,
+                          done: <Check className="h-4 w-4" strokeWidth={2} absoluteStrokeWidth />,
+                        }}
+                      />
                       {exportState === "saved" ? "Downloaded" : "Download"}
                     </button>
                     <button
                       type="button"
                       onClick={() => exportImage("copy")}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white px-4 py-2.5 font-medium ring-1 ring-black/10 transition hover:bg-well"
+                      className="press flex flex-1 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 font-medium transition-[background-color,scale] hover:bg-well"
                     >
-                      {exportState === "copying" ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : exportState === "copied" ? (
-                        <Check className="h-4 w-4 text-emerald-600" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
+                      <IconSwap
+                        active={exportState === "copying" ? "busy" : exportState === "copied" ? "done" : "idle"}
+                        icons={{
+                          idle: <Copy className="h-4 w-4" strokeWidth={2} absoluteStrokeWidth />,
+                          busy: <Loader2 className={clsx("h-4 w-4", spinning && "animate-spin")} strokeWidth={2} absoluteStrokeWidth />,
+                          done: <Check className="h-4 w-4 text-emerald-600" strokeWidth={2} absoluteStrokeWidth />,
+                        }}
+                      />
                       {exportState === "copied" ? "Copied" : "Copy"}
                     </button>
                   </div>
@@ -598,7 +629,7 @@ export function Studio() {
 
         </Reveal>
 
-        <Reveal delay={120}>
+        <Reveal delay={50}>
           <div className="mt-4 flex items-start justify-center gap-2 text-sm text-muted">
             <svg viewBox="0 0 40 28" className="mt-[-6px] h-7 w-10 shrink-0" fill="none" aria-hidden>
               <path
@@ -620,9 +651,29 @@ export function Studio() {
 function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-3 px-5 py-4">
-      <h2 className="font-medium">{title}</h2>
+      <h3 className="font-medium">{title}</h3>
       {children}
     </div>
+  );
+}
+
+/** Cross-fades stacked icons on an infrequent state change, so the swap never resizes the button. */
+function IconSwap({ active, icons }: { active: string; icons: Record<string, React.ReactNode> }) {
+  return (
+    <span aria-hidden className="grid place-items-center">
+      {Object.entries(icons).map(([key, icon]) => (
+        <span
+          key={key}
+          className={clsx(
+            "[grid-area:1/1] transition-[opacity,filter,scale] duration-300 ease-[cubic-bezier(0.2,0,0,1)]",
+            "motion-reduce:scale-100 motion-reduce:blur-[0px]",
+            key === active ? "scale-100 opacity-100 blur-[0px]" : "scale-[0.25] opacity-0 blur-[4px]",
+          )}
+        >
+          {icon}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -645,7 +696,7 @@ function Segmented<T extends string>({
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-full bg-white shadow-[0_1px_2px_rgba(42,42,39,.14)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        className="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-full bg-white shadow-[0_1px_2px_rgba(42,42,39,.14)] transition-transform duration-200 ease-in-out motion-reduce:transition-none"
         style={{
           width: `calc((100% - 4px) / ${values.length})`,
           transform: `translateX(${selectedIndex * 100}%)`,
@@ -658,7 +709,7 @@ function Segmented<T extends string>({
           aria-pressed={value === v}
           onClick={() => onChange(v)}
           className={clsx(
-            "relative z-10 rounded-full px-2 py-2 text-[13px] transition-colors lg:py-1.5",
+            "relative z-10 rounded-full px-2 py-2 text-[13px] transition-[color] lg:py-1.5",
             value === v ? "font-medium text-ink" : "text-muted hover:text-ink",
           )}
         >
@@ -677,14 +728,15 @@ function Switch({ label, checked, onChange }: { label: string; checked: boolean;
       <span
         aria-hidden
         className={clsx(
-          "relative h-5 w-9 rounded-full transition peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#8b7cf6]",
+          "relative h-5 w-9 rounded-full transition-[background-color] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus",
           checked ? "bg-ink" : "bg-black/15",
         )}
       >
+        {/* Slides with translate rather than `left`, so the toggle never triggers layout. */}
         <span
           className={clsx(
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left]",
-            checked ? "left-[18px]" : "left-0.5",
+            "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-[translate] duration-200 ease-in-out motion-reduce:transition-none",
+            checked && "translate-x-4",
           )}
         />
       </span>
@@ -706,7 +758,7 @@ function Field({
   type?: "text" | "number";
 }) {
   const className =
-    "w-full rounded-lg bg-white px-3 py-2 text-base ring-1 ring-black/10 outline-none transition focus:ring-2 focus:ring-[#8b7cf6]/60 sm:text-sm";
+    "w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-base outline-none transition-[box-shadow] focus:ring-2 focus:ring-focus/60 sm:text-sm";
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-xs text-muted">{label}</span>
@@ -726,15 +778,21 @@ function Field({
 
 function ImageInput({ label, onChange }: { label: string; onChange: (dataUrl: string) => void }) {
   return (
-    <label className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-full py-2 text-[13px] ring-1 ring-black/10 transition hover:bg-well">
-      <ImagePlus className="h-3.5 w-3.5" />
+    <label
+      className={clsx(
+        "press flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-black/10 py-2 text-[13px] transition-[background-color,scale] hover:bg-well",
+        FILE_FOCUS,
+      )}
+    >
+      <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} absoluteStrokeWidth />
       Upload {label.toLowerCase()}
       <input
         type="file"
         accept="image/*"
-        className="hidden"
+        className="sr-only"
         onChange={async (e) => {
           const file = e.target.files?.[0];
+          e.target.value = "";
           if (file) onChange(await readFile(file));
         }}
       />
