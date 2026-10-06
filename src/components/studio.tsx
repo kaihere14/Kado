@@ -16,7 +16,7 @@ import {
 import { PLATFORM_ICONS } from "./brand-icons";
 import { Reveal } from "./reveal";
 import { DEFAULT_FORMAT, EXPORT_SCALE, FORMATS, getFormat } from "@/lib/formats";
-import { cardWidth, ProfileCard, type CardOptions, type CardSize, type CardStyle } from "./profile-card";
+import { cardWidth, ProfileCard, type CardOptions, type CardShape, type CardSize, type CardStyle } from "./profile-card";
 
 type BackdropChoice = Backdrop | { upload: string };
 
@@ -43,6 +43,7 @@ function defaultOptions(platform: PlatformId, style: CardStyle = "native"): Card
   const config = PLATFORMS[platform];
   return {
     style,
+    shape: "square",
     size: "M",
     theme: "light",
     visibleStats: config.defaultVisible,
@@ -215,7 +216,15 @@ export function Studio() {
 
         <Reveal delay={160} className="w-full max-w-md sm:w-auto sm:max-w-none">
           {/* Four equal tabs on phones so they never wrap; a single pill row from sm up. */}
-          <div className="mt-9 grid w-full grid-cols-4 gap-1 rounded-[20px] bg-well p-1 sm:flex sm:justify-center sm:rounded-full">
+          <div className="relative mt-9 grid w-full grid-cols-4 rounded-[20px] bg-well p-1 sm:w-[440px] sm:rounded-full">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.12)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:rounded-full"
+              style={{
+                width: "calc((100% - 8px) / 4)",
+                transform: `translateX(${PLATFORM_ORDER.indexOf(platform) * 100}%)`,
+              }}
+            />
             {PLATFORM_ORDER.map((id) => {
               const Icon = PLATFORM_ICONS[id];
               return (
@@ -228,9 +237,9 @@ export function Studio() {
                   }}
                   aria-pressed={platform === id}
                   className={clsx(
-                    "flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition sm:flex-row sm:gap-2 sm:rounded-full sm:px-4 sm:text-sm",
+                    "relative z-10 flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition-colors sm:flex-row sm:gap-2 sm:rounded-full sm:px-4 sm:text-sm",
                     platform === id
-                      ? "bg-white font-medium text-ink shadow-[0_1px_2px_rgba(42,42,39,.12)]"
+                      ? "font-medium text-ink"
                       : "text-muted hover:text-ink",
                   )}
                 >
@@ -338,7 +347,7 @@ export function Studio() {
               {/* Fixed-height body on desktop: the inspector scrolls on its own instead of stretching the window.
                   Stacked below lg, where the preview sticks to the top so every tweak stays in view. */}
               <div className="flex flex-col lg:grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
-                <div className="sticky top-0 z-10 flex h-[250px] border-b border-black/[.06] bg-[#f6f5f1] p-4 sm:h-[400px] sm:p-6 lg:static lg:h-full lg:border-b-0 lg:p-8">
+                <div className="preview-surface sticky top-0 z-10 flex h-[250px] border-b border-black/[.06] p-4 sm:h-[400px] sm:p-6 lg:static lg:h-full lg:border-b-0 lg:p-8">
                   <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     <div
                       className="relative shrink-0 overflow-hidden rounded-xl ring-1 ring-black/[.06]"
@@ -466,6 +475,14 @@ export function Studio() {
                           onChange={(theme) => setOptions((o) => ({ ...o, theme }))}
                         />
                       </div>
+                      {options.style !== "ticket" && (
+                        <Segmented
+                          value={options.shape}
+                          values={["square", "rectangle"] as CardShape[]}
+                          labels={{ square: "Square", rectangle: "Rectangle" }}
+                          onChange={(shape) => setOptions((o) => ({ ...o, shape }))}
+                        />
+                      )}
                     </InspectorSection>
 
                     <InspectorSection title="Show">
@@ -620,8 +637,20 @@ function Segmented<T extends string>({
   labels?: Partial<Record<T, string>>;
   onChange: (value: T) => void;
 }) {
+  const selectedIndex = values.indexOf(value);
   return (
-    <div className="flex rounded-full bg-well p-0.5">
+    <div
+      className="relative grid rounded-full bg-well p-0.5"
+      style={{ gridTemplateColumns: `repeat(${values.length}, minmax(0, 1fr))` }}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-full bg-white shadow-[0_1px_2px_rgba(42,42,39,.14)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        style={{
+          width: `calc((100% - 4px) / ${values.length})`,
+          transform: `translateX(${selectedIndex * 100}%)`,
+        }}
+      />
       {values.map((v) => (
         <button
           key={v}
@@ -629,8 +658,8 @@ function Segmented<T extends string>({
           aria-pressed={value === v}
           onClick={() => onChange(v)}
           className={clsx(
-            "flex-1 rounded-full px-2 py-2 text-[13px] transition lg:py-1.5",
-            value === v ? "bg-white font-medium shadow-[0_1px_2px_rgba(42,42,39,.14)]" : "text-muted hover:text-ink",
+            "relative z-10 rounded-full px-2 py-2 text-[13px] transition-colors lg:py-1.5",
+            value === v ? "font-medium text-ink" : "text-muted hover:text-ink",
           )}
         >
           {labels?.[v] ?? v}

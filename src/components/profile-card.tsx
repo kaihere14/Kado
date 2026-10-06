@@ -5,9 +5,11 @@ import { PLATFORM_ICONS, VerifiedBadge } from "./brand-icons";
 export type CardSize = "S" | "M" | "L";
 export type CardTheme = "light" | "dark";
 export type CardStyle = "native" | "minimal" | "ticket";
+export type CardShape = "square" | "rectangle";
 
 export interface CardOptions {
   style: CardStyle;
+  shape: CardShape;
   size: CardSize;
   theme: CardTheme;
   visibleStats: string[];
@@ -92,6 +94,7 @@ function Avatar({ src, name, accent, className }: { src: string | null; name: st
 function NativeCard(props: CardProps) {
   const { profile, options } = props;
   const { width, scale, dark, accent, PlatformIcon, stats, avatar, handleText, verified } = useCardBasics(props);
+  const rectangular = options.shape === "rectangle";
   const isInstagram = profile.platform === "instagram";
   const hasBannerSlot = options.showBanner && (profile.platform === "x" || profile.platform === "linkedin");
   const banner = hasBannerSlot ? proxied(profile.bannerUrl) : null;
@@ -106,6 +109,7 @@ function NativeCard(props: CardProps) {
       )}
       style={{
         width,
+        height: rectangular ? width * 0.74 : undefined,
         borderRadius: 16 * scale,
         fontSize: 14 * scale,
         background: surface,
@@ -115,7 +119,7 @@ function NativeCard(props: CardProps) {
       {hasBannerSlot && (
         <div
           style={{
-            height: width / 3,
+            height: rectangular ? width / 4 : width / 3,
             background: banner
               ? `center / cover no-repeat url("${banner}")`
               : `linear-gradient(120deg, ${accent}, ${accent}88)`,
@@ -135,10 +139,10 @@ function NativeCard(props: CardProps) {
         </div>
       )}
 
-      <div style={{ padding: `0 ${18 * scale}px ${18 * scale}px` }}>
+      <div style={{ padding: rectangular ? `0 ${16 * scale}px ${16 * scale}px` : `0 ${18 * scale}px ${18 * scale}px` }}>
         <div
           className={clsx(isInstagram && "flex items-center gap-[1.2em]")}
-          style={{ marginTop: hasBannerSlot ? -avatarSize / 2 : 18 * scale }}
+          style={{ marginTop: hasBannerSlot ? -avatarSize / 2 : (rectangular ? 16 : 18) * scale }}
         >
           <div
             className="shrink-0 rounded-full"
@@ -188,13 +192,16 @@ function NativeCard(props: CardProps) {
         </div>
 
         {profile.bio && (
-          <p className="mt-[0.6em] leading-snug whitespace-pre-line" style={{ fontSize: "0.95em" }}>
+          <p
+            className={clsx(rectangular ? "mt-[0.5em] line-clamp-2" : "mt-[0.6em]", "leading-snug whitespace-pre-line")}
+            style={{ fontSize: "0.95em" }}
+          >
             {profile.bio}
           </p>
         )}
 
         {!isInstagram && stats.length > 0 && (
-          <div className="mt-[0.8em] flex flex-wrap gap-x-[1.1em] gap-y-1" style={{ fontSize: "0.9em" }}>
+          <div className={clsx("flex flex-wrap gap-x-[1.1em] gap-y-1", rectangular ? "mt-[0.65em]" : "mt-[0.8em]")} style={{ fontSize: "0.9em" }}>
             {stats.map((s) => (
               <span key={s.key}>
                 <span className="font-semibold" style={profile.platform === "linkedin" ? { color: accent } : undefined}>
@@ -214,14 +221,16 @@ function NativeCard(props: CardProps) {
 function MinimalCard(props: CardProps) {
   const { profile, options } = props;
   const { width, scale, dark, accent, PlatformIcon, stats, avatar, handleText, verified } = useCardBasics(props);
-  const avatarSize = 84 * scale;
+  const rectangular = options.shape === "rectangle";
+  const avatarSize = (rectangular ? 76 : 84) * scale;
 
   return (
     <div
-      className={clsx("relative flex flex-col items-center text-center font-sans", dark ? "text-white" : "text-[#2a2a27]")}
+      className={clsx("relative flex flex-col items-center text-center font-sans", rectangular && "overflow-hidden", dark ? "text-white" : "text-[#2a2a27]")}
       style={{
         width,
-        padding: `${28 * scale}px ${24 * scale}px ${22 * scale}px`,
+        height: rectangular ? width * 0.74 : undefined,
+        padding: rectangular ? `${22 * scale}px ${24 * scale}px ${18 * scale}px` : `${28 * scale}px ${24 * scale}px ${22 * scale}px`,
         fontSize: 14 * scale,
         borderRadius: 22 * scale,
         background: dark ? "rgba(30,30,28,0.86)" : "rgba(255,255,255,0.86)",
@@ -241,7 +250,7 @@ function MinimalCard(props: CardProps) {
         <Avatar src={avatar} name={profile.name} accent={accent} />
       </div>
 
-      <div className="flex items-center justify-center gap-[0.3em]" style={{ marginTop: 14 * scale }}>
+      <div className="flex items-center justify-center gap-[0.3em]" style={{ marginTop: (rectangular ? 10 : 14) * scale }}>
         <span className="font-medium tracking-[-0.02em]" style={{ fontSize: "1.45em" }}>
           {profile.name}
         </span>
@@ -252,7 +261,7 @@ function MinimalCard(props: CardProps) {
       </div>
 
       {profile.bio && (
-        <p className={clsx("leading-snug", dark ? "text-white/75" : "text-black/60")} style={{ marginTop: 10 * scale, maxWidth: "26em" }}>
+        <p className={clsx(rectangular && "line-clamp-2", "leading-snug", dark ? "text-white/75" : "text-black/60")} style={{ marginTop: (rectangular ? 8 : 10) * scale, maxWidth: "26em" }}>
           {profile.bio}
         </p>
       )}
@@ -260,7 +269,7 @@ function MinimalCard(props: CardProps) {
       {stats.length > 0 && (
         <div
           className={clsx("flex w-full justify-center", dark ? "divide-white/10" : "divide-black/8", "divide-x")}
-          style={{ marginTop: 18 * scale }}
+          style={{ marginTop: (rectangular ? 14 : 18) * scale }}
         >
           {stats.map((s) => (
             <div key={s.key} className="flex-1" style={{ maxWidth: 110 * scale }}>

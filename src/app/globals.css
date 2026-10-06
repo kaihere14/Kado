@@ -37,6 +37,17 @@ body {
   color: var(--color-ink);
 }
 
+/* A lightly flecked paper surface helps the editor preview recede behind the card. */
+.preview-surface {
+  background-color: #f6f5f1;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(42, 42, 39, 0.065) 0.65px, transparent 0.8px),
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.8) 0.65px, transparent 0.8px),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.38), transparent 65%);
+  background-position: 0 0, 6px 8px, 0 0;
+  background-size: 13px 13px, 17px 17px, auto;
+}
+
 /* A newly generated card settles onto the canvas. */
 @keyframes card-in {
   from {
