@@ -367,7 +367,7 @@ export function Studio() {
               {/* Fixed-height body on desktop: the inspector scrolls on its own instead of stretching the window.
                   Stacked below lg, where the preview sticks to the top so every tweak stays in view. */}
               <div className="flex flex-col lg:grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
-                <div className="preview-surface sticky top-0 z-10 flex h-[250px] border-b border-black/[.06] p-4 sm:h-[400px] sm:p-6 lg:static lg:h-full lg:border-b-0 lg:p-8">
+                <div className="preview-surface sticky top-0 z-20 flex h-[250px] border-b border-black/[.06] p-4 sm:h-[400px] sm:p-6 lg:static lg:h-full lg:border-b-0 lg:p-8">
                   <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     {/* Outlined like an image: an inset hairline that never changes the frame's size. */}
                     <div
