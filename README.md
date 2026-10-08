@@ -89,7 +89,7 @@ To build for production, run `pnpm build` and then `pnpm start`. kado runs on an
 |---|---|---|
 | X | [FxTwitter](https://github.com/FxEmbed/FxEmbed) public API | Name, bio, photo, banner, followers, following, posts, verified |
 | GitHub | [GitHub REST API](https://docs.github.com/rest/users) | Name, bio, photo, followers, following, public repos |
-| Instagram | Public profile page metadata | Name, photo, followers, following, posts (rounded, as Instagram shows them) |
+| Instagram | Public profile page metadata, with the profile embed as fallback | Name, photo, followers, following, posts (rounded, as Instagram shows them). The fallback has exact counts and the verified badge but no following count |
 | LinkedIn | You | LinkedIn blocks profile access, so you type your headline and numbers |
 
 Profile requests go through Next.js route handlers and are cached for an hour. Photos and banners load through a same-origin image proxy, which only accepts the X, GitHub and Instagram image CDNs. That lets the browser draw them into the exported PNG.

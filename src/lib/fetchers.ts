@@ -122,22 +122,21 @@ function metaContent(html: string, property: string): string | null {
   return match ? decodeEntities(match[1]) : null;
 }
 
-async function fetchInstagram(handle: string): Promise<Profile> {
-  // Instagram has no public API; its profile page carries counts in Open Graph tags for public accounts.
-  // The bio isn't exposed there, so the user adds it by hand.
+/** Profile page Open Graph tags. Returns null when Instagram serves its login wall instead. */
+async function fetchInstagramOpenGraph(handle: string): Promise<Profile | null> {
+  // Instagram login-walls anonymous visitors from datacenter IPs (Vercel included),
+  // but still serves Open Graph tags to Meta's own link-preview crawler.
   const res = await fetch(`https://www.instagram.com/${encodeURIComponent(handle)}/`, {
-    headers: { "User-Agent": "kado/0.1 (profile card generator)" },
+    headers: { "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)" },
     next: { revalidate: 3600 },
   });
   if (res.status === 404) throw new ProfileError("No Instagram account with that handle.", 404);
-  if (!res.ok) throw new ProfileError("Couldn't reach Instagram right now. Try again.", 502);
+  if (!res.ok) return null;
 
   const html = await res.text();
   const description = metaContent(html, "og:description");
   const counts = description?.match(/^([\d.,]+[KMB]?) Followers, ([\d.,]+[KMB]?) Following, ([\d.,]+[KMB]?) Posts/i);
-  if (!counts) {
-    throw new ProfileError("Couldn't read that Instagram profile. It may be private, so fill in the details yourself.", 404);
-  }
+  if (!counts) return null;
 
   const title = metaContent(html, "og:title") ?? "";
   const name = title.match(/^(.*?)\s*\(@/)?.[1]?.trim();
@@ -157,6 +156,61 @@ async function fetchInstagram(handle: string): Promise<Profile> {
       { key: "following", label: "following", value: parseCount(counts[2]) },
     ],
   };
+}
+
+interface InstagramEmbedContext {
+  username?: string;
+  full_name?: string;
+  is_verified?: boolean;
+  profile_pic_url?: string;
+  followers_count?: number;
+  posts_count?: number;
+}
+
+/** Profile embed widget, made for third-party sites. Has exact counts but no following count. */
+async function fetchInstagramEmbed(handle: string): Promise<Profile | null> {
+  const res = await fetch(`https://www.instagram.com/${encodeURIComponent(handle)}/embed/`, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; kado/0.1; profile card generator)" },
+    next: { revalidate: 3600 },
+  });
+  if (res.status === 404) throw new ProfileError("No Instagram account with that handle.", 404);
+  if (!res.ok) throw new ProfileError("Couldn't reach Instagram right now. Try again.", 502);
+
+  // The widget's data sits in a JSON string nested inside the page's own JSON.
+  const raw = (await res.text()).match(/"contextJSON":("(?:[^"\\]|\\.)*")/)?.[1];
+  let context: InstagramEmbedContext | undefined;
+  try {
+    context = raw ? (JSON.parse(JSON.parse(raw)) as { context?: InstagramEmbedContext }).context : undefined;
+  } catch {
+    return null;
+  }
+  if (context?.followers_count == null) return null;
+
+  return {
+    platform: "instagram",
+    handle: context.username ?? handle,
+    name: context.full_name || handle,
+    bio: "",
+    avatarUrl: context.profile_pic_url ?? null,
+    bannerUrl: null,
+    verified: Boolean(context.is_verified),
+    url: `https://www.instagram.com/${handle}/`,
+    stats: [
+      { key: "posts", label: "posts", value: context.posts_count ?? 0 },
+      { key: "followers", label: "followers", value: context.followers_count },
+      // Not exposed by the embed, so the user fills it in.
+      { key: "following", label: "following", value: 0 },
+    ],
+  };
+}
+
+async function fetchInstagram(handle: string): Promise<Profile> {
+  // Instagram has no public API. Neither source exposes the bio, so the user adds it by hand.
+  const profile = (await fetchInstagramOpenGraph(handle)) ?? (await fetchInstagramEmbed(handle));
+  if (!profile) {
+    throw new ProfileError("Couldn't read that Instagram profile. It may be private, so fill in the details yourself.", 404);
+  }
+  return profile;
 }
 
 const FETCHERS: Partial<Record<PlatformId, (handle: string) => Promise<Profile>>> = {
