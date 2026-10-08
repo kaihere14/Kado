@@ -11,7 +11,10 @@ export interface Backdrop {
 /** Tileable SVG noise, grayscale, so it can be overlay-blended onto any colour. */
 function grainLayer(strength: number): string {
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 ${strength}'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>`;
-  return `url("data:image/svg+xml,${svg.replace(/"/g, "'").replace(/</g, "%3C").replace(/>/g, "%3E")}") 0 0 / 220px 220px`;
+  // Encode the parentheses too: html-to-image reads the inner `url(#n)` as a file to fetch, blanks it
+  // when the fetch fails, and the export loses its grain while the unfiltered rect darkens the gradient.
+  const encoded = svg.replace(/"/g, "'").replace(/</g, "%3C").replace(/>/g, "%3E").replace(/\(/g, "%28").replace(/\)/g, "%29");
+  return `url("data:image/svg+xml,${encoded}") 0 0 / 220px 220px`;
 }
 
 export const BACKDROPS: Backdrop[] = [
