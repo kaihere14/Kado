@@ -109,7 +109,8 @@ function NativeCard(props: CardProps) {
       )}
       style={{
         width,
-        height: rectangular ? width * 0.74 : undefined,
+        // A cap, not a fixed height: profiles without a bio or banner would leave an empty block.
+        maxHeight: rectangular ? width * 0.74 : undefined,
         borderRadius: 16 * scale,
         fontSize: 14 * scale,
         background: surface,
@@ -229,7 +230,7 @@ function MinimalCard(props: CardProps) {
       className={clsx("relative flex flex-col items-center text-center font-sans", rectangular && "overflow-hidden", dark ? "text-white" : "text-[#2a2a27]")}
       style={{
         width,
-        height: rectangular ? width * 0.74 : undefined,
+        maxHeight: rectangular ? width * 0.74 : undefined,
         padding: rectangular ? `${22 * scale}px ${24 * scale}px ${18 * scale}px` : `${28 * scale}px ${24 * scale}px ${22 * scale}px`,
         fontSize: 14 * scale,
         borderRadius: 22 * scale,
