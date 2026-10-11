@@ -66,11 +66,22 @@ function isIOS() {
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 }
 
+// iOS can draw the export before the avatar and banner inside it have decoded, so the first render or
+// two come out without them. Each render warms WebKit's cache; the last one is kept.
+const IOS_RENDER_PASSES = 5;
+
 async function renderFrame(node: HTMLElement, options: Parameters<typeof toCanvas>[1]) {
+  const ios = isIOS();
   // The export copies computed styles, so on iOS the card's shadow has to be off on the live node while it renders.
-  if (isIOS()) node.setAttribute("data-flat-export", "");
+  if (ios) node.setAttribute("data-flat-export", "");
   try {
-    return await toCanvas(node, options);
+    let canvas = await toCanvas(node, options);
+    for (let i = 1; ios && i < IOS_RENDER_PASSES; i++) {
+      // Zeroing a discarded canvas frees its memory now; iOS caps the total and blanks new canvases past it.
+      canvas.width = canvas.height = 0;
+      canvas = await toCanvas(node, options);
+    }
+    return canvas;
   } finally {
     node.removeAttribute("data-flat-export");
   }
