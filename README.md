@@ -97,10 +97,10 @@ Profile requests go through Next.js route handlers and are cached for an hour. P
 
 The card is rendered at the full size of the chosen format and scaled down to fit the preview, so the download matches the preview exactly. [html-to-image](https://github.com/bubkoo/html-to-image) turns it into a PNG in your browser.
 
+For a detailed breakdown of the architecture, implementation, trade-offs, and fixed bugs, see [docs/about.md](docs/about.md).
 ## Privacy
 
-kado has no accounts, database or analytics. A handle is sent only to fetch that profile, and the result lives in your browser tab. Uploaded photos and backgrounds never leave your device.
-
+kado has no accounts or database. Vercel Web Analytics is used for page views. A handle is sent only to fetch that profile, and the result lives in your browser tab. Uploaded photos and backgrounds never leave your device.
 ## Roadmap
 
 - [x] X, GitHub, YouTube and Instagram profiles
