@@ -108,6 +108,7 @@ export function Studio() {
   const studioRef = useRef<HTMLElement>(null);
   const exportResetRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const downloadUrlRef = useRef<string>(undefined);
+  const exportingRef = useRef(false);
 
   useEffect(() => () => clearTimeout(exportResetRef.current), []);
 
@@ -224,7 +225,10 @@ export function Studio() {
 
   async function exportImage(mode: "copy" | "download") {
     const node = canvasRef.current;
-    if (!node) return;
+    // One render at a time: another tap mid-render would save the image twice, and the first render's
+    // cleanup would bring the iOS shadow back while the second is still working. The spinner keeps going.
+    if (!node || exportingRef.current) return;
+    exportingRef.current = true;
     const opts = {
       pixelRatio: EXPORT_SCALE,
       cacheBust: true,
@@ -269,6 +273,8 @@ export function Studio() {
       setError("The image couldn't be rendered. Try a different background image.");
       setExportState("idle");
       return;
+    } finally {
+      exportingRef.current = false;
     }
     exportResetRef.current = setTimeout(() => setExportState("idle"), 1800);
   }
