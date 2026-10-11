@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "kado — profile cards worth posting",
-  description: "Turn an X, LinkedIn, GitHub or Instagram handle into a polished share card in seconds.",
+  description: "Turn an X, LinkedIn, GitHub, YouTube or Instagram handle into a polished share card in seconds.",
 };
 
 export const viewport: Viewport = {

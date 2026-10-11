@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { toBlob, toPng } from "html-to-image";
 import { Check, ChevronDown, Copy, Download, ImagePlus, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { BACKDROPS, backdropStyle, DEFAULT_BACKDROP, type Backdrop } from "@/lib/backdrops";
+import { BACKDROPS, backdropStyle, DEFAULT_BACKDROP } from "@/lib/backdrops";
 import {
   blankProfile,
   normalizeHandle,
@@ -16,9 +16,8 @@ import {
 import { PLATFORM_ICONS } from "./brand-icons";
 import { Reveal } from "./reveal";
 import { DEFAULT_FORMAT, EXPORT_SCALE, FORMATS, getFormat } from "@/lib/formats";
+import { loadStudio, saveStudio, type BackdropChoice } from "@/lib/saved-studio";
 import { cardWidth, ProfileCard, type CardOptions, type CardShape, type CardSize, type CardStyle } from "./profile-card";
-
-type BackdropChoice = Backdrop | { upload: string };
 
 // Shown before anyone generates a card, so the studio is never empty.
 const SAMPLE: Profile = {
@@ -82,12 +81,40 @@ export function Studio() {
   const [exportState, setExportState] = useState<"idle" | "copying" | "copied" | "saving" | "saved">("idle");
   const [formatId, setFormatId] = useState(DEFAULT_FORMAT.x);
   const [previewBox, setPreviewBox] = useState({ width: 0, height: 0 });
+  const [restored, setRestored] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const studioRef = useRef<HTMLElement>(null);
   const exportResetRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => () => clearTimeout(exportResetRef.current), []);
+
+  // The server can't read storage, so the last session's card comes back right after hydration.
+  useEffect(() => {
+    const saved = loadStudio();
+    if (saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a lazy initializer would mismatch the server HTML
+      setPlatform(saved.platform);
+      setInput(saved.input);
+      setProfile(saved.profile);
+      setOptions({ ...defaultOptions(saved.profile.platform), ...saved.options });
+      setBackdrop(saved.backdrop);
+      setFormatId(saved.formatId);
+    }
+    setRestored(true);
+  }, []);
+
+  // Saves a beat after edits settle, and on pagehide so a refresh mid-typing keeps the last keystroke.
+  useEffect(() => {
+    if (!restored) return;
+    const save = () => saveStudio({ platform, input, profile, options, backdrop, formatId });
+    const timer = setTimeout(save, 300);
+    window.addEventListener("pagehide", save);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pagehide", save);
+    };
+  }, [restored, platform, input, profile, options, backdrop, formatId]);
 
   const format = getFormat(formatId);
   // Fit the full-size frame inside the preview area, whichever side is tighter.
@@ -221,19 +248,22 @@ export function Studio() {
         </Reveal>
         <Reveal immediate delay={50}>
           <p className="mt-5 max-w-xl text-lg leading-relaxed tracking-[-0.015em] text-muted sm:text-xl">
-            Kado turns an X, GitHub or Instagram handle into a <span className="marker whitespace-nowrap">share-ready card</span> in
+            Kado turns an X, GitHub, YouTube or Instagram handle into a <span className="marker whitespace-nowrap">share-ready card</span> in
             seconds. No sign-up, no design tool.
           </p>
         </Reveal>
 
         <Reveal immediate delay={100} className="w-full max-w-md sm:w-auto sm:max-w-none">
-          {/* Four equal tabs on phones so they never wrap; a single pill row from sm up. */}
-          <div className="relative mt-9 grid w-full grid-cols-4 rounded-[20px] bg-well p-1 sm:w-[440px] sm:rounded-full">
+          {/* Equal tabs on phones so they never wrap; a single pill row from sm up. */}
+          <div
+            className="relative mt-9 grid w-full rounded-[20px] bg-well p-1 sm:w-[540px] sm:rounded-full"
+            style={{ gridTemplateColumns: `repeat(${PLATFORM_ORDER.length}, minmax(0, 1fr))` }}
+          >
             <span
               aria-hidden
               className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.12)] transition-transform duration-200 ease-in-out motion-reduce:transition-none sm:rounded-full"
               style={{
-                width: "calc((100% - 8px) / 4)",
+                width: `calc((100% - 8px) / ${PLATFORM_ORDER.length})`,
                 transform: `translateX(${PLATFORM_ORDER.indexOf(platform) * 100}%)`,
               }}
             />
@@ -249,7 +279,7 @@ export function Studio() {
                   }}
                   aria-pressed={platform === id}
                   className={clsx(
-                    "relative z-10 flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition-[color] sm:flex-row sm:gap-2 sm:rounded-full sm:px-4 sm:text-sm",
+                    "relative z-10 flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition-[color] sm:flex-row sm:gap-2 sm:rounded-full sm:px-3 sm:text-sm",
                     platform === id
                       ? "font-medium text-ink"
                       : "text-muted hover:text-ink",

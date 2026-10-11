@@ -36,6 +36,14 @@ export function InstagramIcon({ className, style }: IconProps) {
   );
 }
 
+export function YouTubeIcon({ className, style }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} style={style} aria-hidden>
+      <path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.55 12 3.55 12 3.55s-7.5 0-9.38.5A3.02 3.02 0 0 0 .5 6.19 31.6 31.6 0 0 0 0 12a31.6 31.6 0 0 0 .5 5.81 3.02 3.02 0 0 0 2.12 2.14c1.88.5 9.38.5 9.38.5s7.5 0 9.38-.5a3.02 3.02 0 0 0 2.12-2.14A31.6 31.6 0 0 0 24 12a31.6 31.6 0 0 0-.5-5.81M9.55 15.57V8.43L15.82 12z" />
+    </svg>
+  );
+}
+
 export function VerifiedBadge({ className, color = "#1d9bf0" }: IconProps & { color?: string }) {
   return (
     <svg viewBox="0 0 22 22" className={className} aria-label="Verified">
@@ -53,4 +61,5 @@ export const PLATFORM_ICONS: Record<PlatformId, (props: IconProps) => React.JSX.
   github: GitHubIcon,
   linkedin: LinkedInIcon,
   instagram: InstagramIcon,
+  youtube: YouTubeIcon,
 };

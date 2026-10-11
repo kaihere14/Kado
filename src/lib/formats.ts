@@ -23,6 +23,7 @@ export const DEFAULT_FORMAT: Record<PlatformId, string> = {
   linkedin: "linkedin",
   github: "github",
   instagram: "portrait",
+  youtube: "x",
 };
 
 export const EXPORT_SCALE = 2;

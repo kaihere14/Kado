@@ -213,10 +213,88 @@ async function fetchInstagram(handle: string): Promise<Profile> {
   return profile;
 }
 
+type ImageSource = { url: string; width: number };
+
+interface YouTubeAbout {
+  subscriberCountText?: string;
+  videoCountText?: string;
+  viewCountText?: string;
+  canonicalChannelUrl?: string;
+}
+
+interface YouTubeMetadata {
+  title: string;
+  description: string;
+  avatar?: { thumbnails: { url: string }[] };
+}
+
+/** Depth-first search for the first value stored under `key`, wherever YouTube nests it this week. */
+function findKey(node: unknown, key: string): unknown {
+  if (!node || typeof node !== "object") return undefined;
+  if (key in node) return (node as Record<string, unknown>)[key];
+  for (const child of Object.values(node)) {
+    const found = findKey(child, key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** "21.4M subscribers" → 21400000, "1,857 videos" → 1857, missing (hidden count) → 0 */
+function leadingCount(text: string | undefined): number {
+  return text ? parseCount(text.split(" ")[0]) : 0;
+}
+
+async function fetchYouTube(handle: string): Promise<Profile> {
+  // The channel's About page embeds everything in ytInitialData, so no API key is needed.
+  // hl=en keeps the counts in English; SOCS skips the cookie consent page served to EU regions.
+  const res = await fetch(`https://www.youtube.com/@${encodeURIComponent(handle)}/about?hl=en`, {
+    headers: { "Accept-Language": "en-US,en;q=0.9", Cookie: "SOCS=CAI" },
+    // The page is ~3MB, over the 2MB data cache limit; the route's Cache-Control caches the result instead.
+    cache: "no-store",
+  });
+  if (res.status === 404) throw new ProfileError("No YouTube channel with that handle.", 404);
+  if (!res.ok) throw new ProfileError("Couldn't reach YouTube right now. Try again.", 502);
+
+  const json = (await res.text()).match(/var ytInitialData = (\{[\s\S]*?\});<\/script>/)?.[1];
+  let data: unknown;
+  try {
+    data = json ? JSON.parse(json) : undefined;
+  } catch {
+    data = undefined;
+  }
+  const meta = findKey(data, "channelMetadataRenderer") as YouTubeMetadata | undefined;
+  const about = findKey(data, "aboutChannelViewModel") as YouTubeAbout | undefined;
+  if (!meta || !about) throw new ProfileError("Couldn't read that YouTube channel. Try again.", 502);
+
+  const header = findKey(data, "pageHeaderViewModel");
+  const bannerSources = (findKey(findKey(header, "banner"), "sources") as ImageSource[] | undefined) ?? [];
+  const titleLabel = findKey(findKey(header, "title"), "accessibilityContext") as { label?: string } | undefined;
+  const canonical = about.canonicalChannelUrl?.match(/\/@([^/?#]+)/)?.[1];
+
+  return {
+    platform: "youtube",
+    handle: canonical ? decodeURIComponent(canonical) : handle,
+    name: meta.title,
+    bio: meta.description,
+    avatarUrl: meta.avatar?.thumbnails[0]?.url ?? null,
+    // Big enough for a 2x export without pulling the 2560px original.
+    bannerUrl: (bannerSources.find((s) => s.width >= 1500) ?? bannerSources.at(-1))?.url ?? null,
+    // Screen-reader label on the channel name, e.g. "Marques Brownlee, Verified". Artists get a note badge instead.
+    verified: /, (Verified|Official Artist Channel)$/.test(titleLabel?.label ?? ""),
+    url: `https://www.youtube.com/@${canonical ?? handle}`,
+    stats: [
+      { key: "subscribers", label: "subscribers", value: leadingCount(about.subscriberCountText) },
+      { key: "videos", label: "videos", value: leadingCount(about.videoCountText) },
+      { key: "views", label: "views", value: leadingCount(about.viewCountText) },
+    ],
+  };
+}
+
 const FETCHERS: Partial<Record<PlatformId, (handle: string) => Promise<Profile>>> = {
   x: fetchX,
   github: fetchGitHub,
   instagram: fetchInstagram,
+  youtube: fetchYouTube,
 };
 
 export async function fetchProfile(platform: PlatformId, handle: string): Promise<Profile> {

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Turn an X, GitHub or Instagram handle into a profile card worth posting.<br>
+  Turn an X, GitHub, YouTube or Instagram handle into a profile card worth posting.<br>
   No sign-up, no design tool, nothing stored.
 </p>
 
@@ -33,7 +33,7 @@ kado makes a clean, share-ready image of your profile. Type a handle, and it pul
 
 | | |
 |---|---|
-| Platforms | X, GitHub and Instagram pulled automatically; LinkedIn filled in by hand |
+| Platforms | X, GitHub, YouTube and Instagram pulled automatically; LinkedIn filled in by hand |
 | Card styles | Native, Minimal and Ticket, each in light or dark |
 | Export sizes | X post 16:9, LinkedIn 1.91:1, Instagram 4:5, Square 1:1, GitHub social preview 2:1 |
 | Resolution | Every export at 2×, for example 2400 × 1350 for an X post |
@@ -90,9 +90,10 @@ To build for production, run `pnpm build` and then `pnpm start`. kado runs on an
 | X | [FxTwitter](https://github.com/FxEmbed/FxEmbed) public API | Name, bio, photo, banner, followers, following, posts, verified |
 | GitHub | [GitHub REST API](https://docs.github.com/rest/users) | Name, bio, photo, followers, following, public repos |
 | Instagram | Public profile page metadata, with the profile embed as fallback | Name, photo, followers, following, posts (rounded, as Instagram shows them). The fallback has exact counts and the verified badge but no following count |
+| YouTube | Public channel About page | Name, description, photo, banner, subscribers (rounded, as YouTube shows them), videos, total views, verified |
 | LinkedIn | You | LinkedIn blocks profile access, so you type your headline and numbers |
 
-Profile requests go through Next.js route handlers and are cached for an hour. Photos and banners load through a same-origin image proxy, which only accepts the X, GitHub and Instagram image CDNs. That lets the browser draw them into the exported PNG.
+Profile requests go through Next.js route handlers and are cached for an hour. Photos and banners load through a same-origin image proxy, which only accepts the X, GitHub, YouTube and Instagram image CDNs. That lets the browser draw them into the exported PNG.
 
 The card is rendered at the full size of the chosen format and scaled down to fit the preview, so the download matches the preview exactly. [html-to-image](https://github.com/bubkoo/html-to-image) turns it into a PNG in your browser.
 
@@ -102,7 +103,7 @@ kado has no accounts, database or analytics. A handle is sent only to fetch that
 
 ## Roadmap
 
-- [x] X, GitHub and Instagram profiles
+- [x] X, GitHub, YouTube and Instagram profiles
 - [x] Feed-sized exports at 2×
 - [ ] Shareable links such as `/x/handle` that open straight into the studio
 - [ ] Sign in with LinkedIn to fill in your name and photo

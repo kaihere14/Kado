@@ -12,6 +12,7 @@ const PLATFORM_NOTES: Record<string, string> = {
   linkedin: "LinkedIn hides profile data, so you type your headline and numbers.",
   github: "Pulled from GitHub’s public API, repos included.",
   instagram: "Followers, following and posts from public profiles. Add your bio yourself.",
+  youtube: "Subscribers, videos, views, banner and description, straight from the channel.",
 };
 
 export default function Home() {
@@ -54,7 +55,8 @@ export default function Home() {
             {PLATFORM_ORDER.map((id, index) => {
               const Icon = PLATFORM_ICONS[id];
               return (
-                <li key={id}>
+                // An odd last tile spans both columns instead of sitting alone.
+                <li key={id} className="sm:odd:last:col-span-2">
                   {/* Outer radius = tile radius (8) + padding (20). */}
                   <Reveal delay={index * 50} className="flex h-full gap-4 rounded-[28px] bg-well/70 p-5">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white shadow-[0_1px_2px_rgba(42,42,39,.1)]">

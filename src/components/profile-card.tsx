@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { Fragment } from "react";
 import { formatCount, type PlatformId, type Profile } from "@/lib/platforms";
 import { PLATFORM_ICONS, VerifiedBadge } from "./brand-icons";
 
@@ -35,6 +36,7 @@ const ACCENTS: Record<PlatformId, string> = {
   linkedin: "#0a66c2",
   github: "#8957e5",
   instagram: "#e1306c",
+  youtube: "#ff0033",
 };
 
 /** Route remote images through our proxy so the PNG export can read them. */
@@ -96,10 +98,32 @@ function NativeCard(props: CardProps) {
   const { width, scale, dark, accent, PlatformIcon, stats, avatar, handleText, verified } = useCardBasics(props);
   const rectangular = options.shape === "rectangle";
   const isInstagram = profile.platform === "instagram";
-  const hasBannerSlot = options.showBanner && (profile.platform === "x" || profile.platform === "linkedin");
+  const isYouTube = profile.platform === "youtube";
+  const hasBannerSlot = options.showBanner && (profile.platform === "x" || profile.platform === "linkedin" || isYouTube);
   const banner = hasBannerSlot ? proxied(profile.bannerUrl) : null;
-  const avatarSize = 72 * scale;
+  // X and LinkedIn tuck the avatar into the banner; YouTube insets a rounded banner above the avatar row.
+  const avatarOverlapsBanner = hasBannerSlot && !isYouTube;
+  const avatarSize = (isYouTube ? 64 : 72) * scale;
+  // The ring cuts the avatar out of the banner (or frames Instagram's story ring); YouTube's sits clear of it.
+  const ring = isYouTube ? 0 : 4 * scale;
+  const padding = (rectangular ? 16 : 18) * scale;
   const surface = dark ? "#121214" : "#ffffff";
+  const muted = dark ? "text-white/50" : "text-neutral-500";
+  const verifiedColor = profile.platform === "linkedin" || isYouTube ? "#71717a" : accent;
+
+  const identity = (
+    <>
+      <div className="flex items-center gap-[0.3em]">
+        <span className="truncate font-bold" style={{ fontSize: "1.25em" }}>
+          {profile.name}
+        </span>
+        {verified && <VerifiedBadge className="h-[1.15em] w-[1.15em] shrink-0" color={verifiedColor} />}
+      </div>
+      <div className={clsx("truncate", muted)} style={{ fontSize: "0.9em" }}>
+        {handleText}
+      </div>
+    </>
+  );
 
   return (
     <div
@@ -120,7 +144,9 @@ function NativeCard(props: CardProps) {
       {hasBannerSlot && (
         <div
           style={{
-            height: rectangular ? width / 4 : width / 3,
+            height: isYouTube ? (width - 2 * padding) / (rectangular ? 6 : 4.5) : rectangular ? width / 4 : width / 3,
+            margin: isYouTube ? `${padding}px ${padding}px 0` : undefined,
+            borderRadius: isYouTube ? 10 * scale : undefined,
             background: banner
               ? `center / cover no-repeat url("${banner}")`
               : `linear-gradient(120deg, ${accent}, ${accent}88)`,
@@ -134,23 +160,28 @@ function NativeCard(props: CardProps) {
             "absolute flex items-center justify-center rounded-full",
             hasBannerSlot ? "bg-black/45 text-white" : dark ? "bg-white/10 text-white" : "bg-black/5 text-neutral-800",
           )}
-          style={{ top: 12 * scale, right: 12 * scale, width: 28 * scale, height: 28 * scale }}
+          style={{
+            top: (isYouTube && hasBannerSlot ? padding : 0) + 12 * scale,
+            right: (isYouTube && hasBannerSlot ? padding : 0) + 12 * scale,
+            width: 28 * scale,
+            height: 28 * scale,
+          }}
         >
           <PlatformIcon className="h-1/2 w-1/2" />
         </div>
       )}
 
-      <div style={{ padding: rectangular ? `0 ${16 * scale}px ${16 * scale}px` : `0 ${18 * scale}px ${18 * scale}px` }}>
+      <div style={{ padding: `0 ${padding}px ${padding}px` }}>
         <div
-          className={clsx(isInstagram && "flex items-center gap-[1.2em]")}
-          style={{ marginTop: hasBannerSlot ? -avatarSize / 2 : (rectangular ? 16 : 18) * scale }}
+          className={clsx(isInstagram && "flex items-center gap-[1.2em]", isYouTube && "flex items-center gap-[0.9em]")}
+          style={{ marginTop: avatarOverlapsBanner ? -avatarSize / 2 : padding }}
         >
           <div
             className="shrink-0 rounded-full"
             style={{
-              width: avatarSize + 8 * scale,
-              height: avatarSize + 8 * scale,
-              padding: 4 * scale,
+              width: avatarSize + 2 * ring,
+              height: avatarSize + 2 * ring,
+              padding: ring,
               background: isInstagram ? "linear-gradient(45deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5)" : surface,
             }}
           >
@@ -173,24 +204,29 @@ function NativeCard(props: CardProps) {
               ))}
             </div>
           )}
+
+          {/* YouTube's header line: name, then handle, then the numbers joined by bullets. */}
+          {isYouTube && (
+            <div className="min-w-0 flex-1">
+              {identity}
+              {stats.length > 0 && (
+                // Wraps between stats rather than truncating mid-number when all three are shown.
+                <div className={muted} style={{ fontSize: "0.9em" }}>
+                  {stats.map((s, i) => (
+                    <Fragment key={s.key}>
+                      {i > 0 && " • "}
+                      <span className="whitespace-nowrap">
+                        {formatCount(s.value)} {s.label}
+                      </span>
+                    </Fragment>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div style={{ marginTop: 10 * scale }}>
-          <div className="flex items-center gap-[0.3em]">
-            <span className="truncate font-bold" style={{ fontSize: "1.25em" }}>
-              {profile.name}
-            </span>
-            {verified && (
-              <VerifiedBadge
-                className="h-[1.15em] w-[1.15em] shrink-0"
-                color={profile.platform === "linkedin" ? "#71717a" : accent}
-              />
-            )}
-          </div>
-          <div className={clsx("truncate", dark ? "text-white/50" : "text-neutral-500")} style={{ fontSize: "0.9em" }}>
-            {handleText}
-          </div>
-        </div>
+        {!isYouTube && <div style={{ marginTop: 10 * scale }}>{identity}</div>}
 
         {profile.bio && (
           <p
@@ -201,14 +237,14 @@ function NativeCard(props: CardProps) {
           </p>
         )}
 
-        {!isInstagram && stats.length > 0 && (
+        {!isInstagram && !isYouTube && stats.length > 0 && (
           <div className={clsx("flex flex-wrap gap-x-[1.1em] gap-y-1", rectangular ? "mt-[0.65em]" : "mt-[0.8em]")} style={{ fontSize: "0.9em" }}>
             {stats.map((s) => (
               <span key={s.key}>
                 <span className="font-semibold" style={profile.platform === "linkedin" ? { color: accent } : undefined}>
                   {formatCount(s.value)}
                 </span>{" "}
-                <span className={dark ? "text-white/50" : "text-neutral-500"}>{s.label}</span>
+                <span className={muted}>{s.label}</span>
               </span>
             ))}
           </div>
