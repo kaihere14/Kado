@@ -127,6 +127,7 @@ function NativeCard(props: CardProps) {
 
   return (
     <div
+      data-card-shadow
       className={clsx(
         "relative overflow-hidden font-sans",
         dark ? "text-white ring-1 ring-white/10" : "text-neutral-900 ring-1 ring-black/5",
@@ -263,6 +264,7 @@ function MinimalCard(props: CardProps) {
 
   return (
     <div
+      data-card-shadow
       className={clsx("relative flex flex-col items-center text-center font-sans", rectangular && "overflow-hidden", dark ? "text-white" : "text-[#2a2a27]")}
       style={{
         width,

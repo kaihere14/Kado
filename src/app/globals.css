@@ -132,6 +132,11 @@ body {
   animation: fade-in 300ms var(--ease-out) both;
 }
 
+/* iOS paints the card's blurred shadow as a hard, offset block in exports, so those go out flat. */
+[data-flat-export] [data-card-shadow] {
+  box-shadow: none !important;
+}
+
 /* Sections fade in the first time they're scrolled to. */
 .reveal.is-visible {
   animation: fade-in 300ms var(--ease-out) both;

@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { toBlob, toPng } from "html-to-image";
+import { toCanvas } from "html-to-image";
 import { Check, ChevronDown, Copy, Download, ImagePlus, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BACKDROPS, backdropStyle, DEFAULT_BACKDROP } from "@/lib/backdrops";
@@ -61,6 +61,27 @@ function readFile(file: File): Promise<string> {
   });
 }
 
+// iPadOS reports itself as a Mac; touch support gives it away.
+function isIOS() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+}
+
+async function renderFrame(node: HTMLElement, options: Parameters<typeof toCanvas>[1]) {
+  // The export copies computed styles, so on iOS the card's shadow has to be off on the live node while it renders.
+  if (isIOS()) node.setAttribute("data-flat-export", "");
+  try {
+    return await toCanvas(node, options);
+  } finally {
+    node.removeAttribute("data-flat-export");
+  }
+}
+
+function pngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Render failed"))), "image/png"),
+  );
+}
+
 function capitalize(text: string) {
   return text[0].toUpperCase() + text.slice(1);
 }
@@ -86,6 +107,7 @@ export function Studio() {
   const previewRef = useRef<HTMLDivElement>(null);
   const studioRef = useRef<HTMLElement>(null);
   const exportResetRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const downloadUrlRef = useRef<string>(undefined);
 
   useEffect(() => () => clearTimeout(exportResetRef.current), []);
 
@@ -203,34 +225,48 @@ export function Studio() {
   async function exportImage(mode: "copy" | "download") {
     const node = canvasRef.current;
     if (!node) return;
-    const opts = { pixelRatio: EXPORT_SCALE, cacheBust: true, width: format.width, height: format.height };
+    const opts = {
+      pixelRatio: EXPORT_SCALE,
+      cacheBust: true,
+      // Every proxied image is `/api/image?url=…`; without the query, they all share one cache entry,
+      // so a banner can come out as the avatar, or a new profile as the last one exported.
+      includeQueryParams: true,
+      width: format.width,
+      height: format.height,
+    };
+    const download = (blob: Blob) => {
+      // iOS Safari asks before downloading and does nothing when the answer is Download for a
+      // multi-megabyte data: URL. A blob URL works, as long as it outlives that prompt, so each one
+      // is kept until the next download replaces it.
+      if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
+      downloadUrlRef.current = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.download = `kado-${profile.handle}-${format.id}.png`;
+      link.href = downloadUrlRef.current;
+      link.click();
+      setExportState("saved");
+    };
     // A second export must not be cut short by the first one's pending reset.
     clearTimeout(exportResetRef.current);
     try {
       if (mode === "copy") {
         setExportState("copying");
-        // Pass a promise so Safari keeps the user-gesture context while rendering.
-        const blob = toBlob(node, opts).then((b) => {
-          if (!b) throw new Error("Render failed");
-          return b;
-        });
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        setExportState("copied");
+        const blob = renderFrame(node, opts).then(pngBlob);
+        try {
+          // Pass a promise so Safari keeps the user-gesture context while rendering.
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          setExportState("copied");
+        } catch {
+          // The clipboard only exists on https and localhost, and a browser may still refuse the write.
+          // The image goes out as a download instead.
+          download(await blob);
+        }
       } else {
         setExportState("saving");
-        const url = await toPng(node, opts);
-        const link = document.createElement("a");
-        link.download = `kado-${profile.handle}-${format.id}.png`;
-        link.href = url;
-        link.click();
-        setExportState("saved");
+        download(await pngBlob(await renderFrame(node, opts)));
       }
     } catch {
-      setError(
-        mode === "copy"
-          ? "Your browser blocked copying the image. Use Download instead."
-          : "The image couldn't be rendered. Try a different background image.",
-      );
+      setError("The image couldn't be rendered. Try a different background image.");
       setExportState("idle");
       return;
     }
