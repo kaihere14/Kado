@@ -4,7 +4,20 @@ import clsx from "clsx";
 import { toCanvas } from "html-to-image";
 import { Check, ChevronDown, Copy, Download, ImagePlus, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { BACKDROPS, backdropStyle, DEFAULT_BACKDROP } from "@/lib/backdrops";
+import {
+  BACKDROPS,
+  backdropStyle,
+  blurImage,
+  DEFAULT_BACKDROP,
+  defaultTune,
+  hueTrack,
+  isDarkBackdrop,
+  isDarkImage,
+  tunableParts,
+  tunedBackdrop,
+  type BackdropChoice,
+  type BackdropTune,
+} from "@/lib/backdrops";
 import {
   blankProfile,
   normalizeHandle,
@@ -16,8 +29,19 @@ import {
 import { PLATFORM_ICONS } from "./brand-icons";
 import { Reveal } from "./reveal";
 import { DEFAULT_FORMAT, EXPORT_SCALE, FORMATS, getFormat } from "@/lib/formats";
-import { loadStudio, saveStudio, type BackdropChoice } from "@/lib/saved-studio";
-import { cardWidth, ProfileCard, type CardOptions, type CardShape, type CardSize, type CardStyle } from "./profile-card";
+import { loadStudio, saveStudio } from "@/lib/saved-studio";
+import { drawProjected, projection } from "@/lib/warp";
+import {
+  cardWidth,
+  DEFAULT_EFFECTS,
+  FRAME_STYLES,
+  ProfileCard,
+  type CardEffects,
+  type CardOptions,
+  type CardShape,
+  type CardSize,
+  type CardStyle,
+} from "./profile-card";
 
 // Shown before anyone generates a card, so the studio is never empty.
 const SAMPLE: Profile = {
@@ -70,17 +94,49 @@ function isIOS() {
 // two come out without them. Each render warms WebKit's cache; the last one is kept.
 const IOS_RENDER_PASSES = 5;
 
-async function renderFrame(node: HTMLElement, options: Parameters<typeof toCanvas>[1]) {
+type RenderOptions = NonNullable<Parameters<typeof toCanvas>[1]> & { pixelRatio: number };
+
+async function renderPasses(node: HTMLElement, options: RenderOptions, passes: number) {
+  let canvas = await toCanvas(node, options);
+  for (let i = 1; i < passes; i++) {
+    // Zeroing a discarded canvas frees its memory now; iOS caps the total and blanks new canvases past it.
+    canvas.width = canvas.height = 0;
+    canvas = await toCanvas(node, options);
+  }
+  return canvas;
+}
+
+// A tilted card is rendered flat at 1.5x the export scale, so the side the tilt brings closer stays sharp.
+const TILT_SUPERSAMPLE = 1.5;
+
+/**
+ * Renders the frame. A tilted or rotated card is rendered flat on its own, `pad` px of room around it for
+ * its shadow, and projected onto the background in script: WebKit paints transforms inside the export
+ * without perspective, and smears their shadows.
+ */
+async function renderFrame(node: HTMLElement, options: RenderOptions, pad: number) {
   const ios = isIOS();
+  const passes = ios ? IOS_RENDER_PASSES : 1;
+  const card = node.querySelector<HTMLElement>("[data-card-tilt]");
   // The export copies computed styles, so on iOS the card's shadow has to be off on the live node while it renders.
   if (ios) node.setAttribute("data-flat-export", "");
   try {
-    let canvas = await toCanvas(node, options);
-    for (let i = 1; ios && i < IOS_RENDER_PASSES; i++) {
-      // Zeroing a discarded canvas frees its memory now; iOS caps the total and blanks new canvases past it.
-      canvas.width = canvas.height = 0;
-      canvas = await toCanvas(node, options);
-    }
+    if (!card || getComputedStyle(card).transform === "none") return await renderPasses(node, options, passes);
+    const canvas = await renderPasses(node, { ...options, filter: (el) => el !== card }, passes);
+    const sourceRatio = options.pixelRatio * TILT_SUPERSAMPLE;
+    const flat = await renderPasses(
+      card,
+      {
+        ...options,
+        pixelRatio: sourceRatio,
+        width: card.offsetWidth + 2 * pad,
+        height: card.offsetHeight + 2 * pad,
+        style: { transform: "none", padding: `${pad}px`, boxSizing: "border-box" },
+      },
+      passes,
+    );
+    drawProjected(canvas, flat, projection(card, node, { pad, sourceRatio, targetRatio: options.pixelRatio }));
+    flat.width = flat.height = 0;
     return canvas;
   } finally {
     node.removeAttribute("data-flat-export");
@@ -97,6 +153,17 @@ function capitalize(text: string) {
   return text[0].toUpperCase() + text.slice(1);
 }
 
+/** "+12°", "−8°", "0°", with a true minus sign. */
+function signed(unit: string) {
+  return (value: number) => `${value > 0 ? "+" : value < 0 ? "\u2212" : ""}${Math.abs(value)}${unit}`;
+}
+
+function differs<T extends object>(a: T, b: T, keys: (keyof T)[] = Object.keys(a) as (keyof T)[]) {
+  return keys.some((key) => a[key] !== b[key]);
+}
+
+const DEPTH_KEYS: (keyof CardEffects)[] = ["shadow", "rotate", "tiltX", "tiltY"];
+
 // File inputs are visually hidden inside their label, so the label shows the keyboard focus ring.
 const FILE_FOCUS =
   "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus";
@@ -110,6 +177,9 @@ export function Studio() {
   const [generation, setGeneration] = useState(0);
   const [options, setOptions] = useState<CardOptions>(() => defaultOptions("x"));
   const [backdrop, setBackdrop] = useState<BackdropChoice>(DEFAULT_BACKDROP);
+  const [tune, setTune] = useState<BackdropTune>(() => defaultTune(DEFAULT_BACKDROP));
+  const [effects, setEffects] = useState<CardEffects>(DEFAULT_EFFECTS);
+  const [blurredUpload, setBlurredUpload] = useState<{ src: string; radius: number; formatId: string; url: string }>();
   const [exportState, setExportState] = useState<"idle" | "copying" | "copied" | "saving" | "saved">("idle");
   const [formatId, setFormatId] = useState(DEFAULT_FORMAT.x);
   const [previewBox, setPreviewBox] = useState({ width: 0, height: 0 });
@@ -133,6 +203,8 @@ export function Studio() {
       setProfile(saved.profile);
       setOptions({ ...defaultOptions(saved.profile.platform), ...saved.options });
       setBackdrop(saved.backdrop);
+      setTune(saved.tune);
+      setEffects(saved.effects);
       setFormatId(saved.formatId);
     }
     setRestored(true);
@@ -141,14 +213,14 @@ export function Studio() {
   // Saves a beat after edits settle, and on pagehide so a refresh mid-typing keeps the last keystroke.
   useEffect(() => {
     if (!restored) return;
-    const save = () => saveStudio({ platform, input, profile, options, backdrop, formatId });
+    const save = () => saveStudio({ platform, input, profile, options, backdrop, tune, effects, formatId });
     const timer = setTimeout(save, 300);
     window.addEventListener("pagehide", save);
     return () => {
       clearTimeout(timer);
       window.removeEventListener("pagehide", save);
     };
-  }, [restored, platform, input, profile, options, backdrop, formatId]);
+  }, [restored, platform, input, profile, options, backdrop, tune, effects, formatId]);
 
   const format = getFormat(formatId);
   // Fit the full-size frame inside the preview area, whichever side is tighter.
@@ -167,8 +239,34 @@ export function Studio() {
     return () => observer.disconnect();
   }, []);
 
+  const upload = "upload" in backdrop ? backdrop.upload : null;
+
+  // Blurs an uploaded background in script once the slider settles. Until then the preview uses a CSS blur.
+  useEffect(() => {
+    if (!upload || !tune.blur) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      blurImage(upload, tune.blur, format).then(
+        (url) => !cancelled && setBlurredUpload({ src: upload, radius: tune.blur, formatId: format.id, url }),
+        () => {},
+      );
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [upload, tune.blur, format]);
+
   const config = PLATFORMS[platform];
   const cardConfig = PLATFORMS[profile.platform];
+  const tuned = tunedBackdrop(
+    backdrop,
+    tune,
+    blurredUpload?.src === upload && blurredUpload.radius === tune.blur && blurredUpload.formatId === format.id
+      ? blurredUpload.url
+      : undefined,
+  );
+  const tunable = tunableParts(backdrop);
   // Hidden spinners stop, so nothing animates off-screen while the studio is idle.
   const spinning = exportState !== "idle";
 
@@ -226,6 +324,20 @@ export function Studio() {
     }
   }
 
+  // Adjustments belong to the background they were made on, so a new pick starts from its own defaults.
+  function pickBackdrop(next: BackdropChoice) {
+    setBackdrop(next);
+    setTune(defaultTune(next));
+  }
+
+  function updateTune(patch: Partial<BackdropTune>) {
+    setTune((t) => ({ ...t, ...patch }));
+  }
+
+  function updateEffects(patch: Partial<CardEffects>) {
+    setEffects((e) => ({ ...e, ...patch }));
+  }
+
   function updateProfile(patch: Partial<Profile>) {
     setProfile((p) => ({ ...p, ...patch }));
   }
@@ -249,6 +361,8 @@ export function Studio() {
       width: format.width,
       height: format.height,
     };
+    // Enough room around a tilted card for its strongest shadow to fade out.
+    const shadowRoom = Math.ceil(24 + effects.shadow * 1.2);
     const download = (blob: Blob) => {
       // iOS Safari asks before downloading and does nothing when the answer is Download for a
       // multi-megabyte data: URL. A blob URL works, as long as it outlives that prompt, so each one
@@ -266,7 +380,7 @@ export function Studio() {
     try {
       if (mode === "copy") {
         setExportState("copying");
-        const blob = renderFrame(node, opts).then(pngBlob);
+        const blob = renderFrame(node, opts, shadowRoom).then(pngBlob);
         try {
           // Pass a promise so Safari keeps the user-gesture context while rendering.
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
@@ -278,7 +392,7 @@ export function Studio() {
         }
       } else {
         setExportState("saving");
-        download(await pngBlob(await renderFrame(node, opts)));
+        download(await pngBlob(await renderFrame(node, opts, shadowRoom)));
       }
     } catch {
       setError("The image couldn't be rendered. Try a different background image.");
@@ -467,12 +581,20 @@ export function Studio() {
                       >
                         <div
                           ref={canvasRef}
-                          className="flex items-center justify-center"
-                          style={{ width: format.width, height: format.height, ...backdropStyle(backdrop) }}
+                          className="relative isolate flex items-center justify-center overflow-hidden"
+                          style={{ width: format.width, height: format.height }}
                         >
+                          <div aria-hidden className="absolute" style={tuned.layer} />
+                          {tuned.grain && <div aria-hidden className="absolute inset-0" style={tuned.grain} />}
                           {/* Only freshly generated cards settle in; the sample shows without a second entrance. */}
-                          <div key={generation} className={clsx(generation > 0 && "card-in")}>
-                            <ProfileCard profile={profile} options={options} width={cardWidth(options.size, format)} />
+                          <div key={generation} className={clsx("relative", generation > 0 && "card-in")}>
+                            <ProfileCard
+                              profile={profile}
+                              options={options}
+                              width={cardWidth(options.size, format)}
+                              effects={effects}
+                              darkBackdrop={isDarkBackdrop(backdrop)}
+                            />
                           </div>
                         </div>
                       </div>
@@ -525,7 +647,14 @@ export function Studio() {
                       </div>
                     </InspectorSection>
 
-                    <InspectorSection title="Background">
+                    <InspectorSection
+                      title="Background"
+                      action={
+                        differs(tune, defaultTune(backdrop)) && (
+                          <ResetButton label="background adjustments" onClick={() => setTune(defaultTune(backdrop))} />
+                        )
+                      }
+                    >
                       <div className="grid grid-cols-8 gap-1.5 lg:grid-cols-4">
                         {BACKDROPS.map((b) => (
                           <button
@@ -534,7 +663,7 @@ export function Studio() {
                             title={b.label}
                             aria-label={`${b.label} background`}
                             aria-pressed={"id" in backdrop && backdrop.id === b.id}
-                            onClick={() => setBackdrop(b)}
+                            onClick={() => pickBackdrop(b)}
                             className={clsx(
                               "press aspect-square rounded-lg ring-offset-2 transition-[box-shadow,scale]",
                               "id" in backdrop && backdrop.id === b.id
@@ -562,10 +691,50 @@ export function Studio() {
                               const file = e.target.files?.[0];
                               // Clear the value so picking the same file again still fires.
                               e.target.value = "";
-                              if (file) setBackdrop({ upload: await readFile(file) });
+                              if (!file) return;
+                              const image = await readFile(file);
+                              pickBackdrop({ upload: image, dark: await isDarkImage(image) });
                             }}
                           />
                         </label>
+                      </div>
+                      <div className="flex flex-col">
+                        <Slider
+                          label="Hue"
+                          value={tune.hue}
+                          min={0}
+                          max={359}
+                          track={hueTrack(backdrop)}
+                          disabled={!tunable.hue}
+                          format={(v) => `${v}°`}
+                          onChange={(hue) => updateTune({ hue })}
+                        />
+                        <Slider
+                          label="Intensity"
+                          value={tune.intensity}
+                          min={-100}
+                          max={100}
+                          disabled={!tunable.intensity}
+                          format={signed("%")}
+                          onChange={(intensity) => updateTune({ intensity })}
+                        />
+                        <Slider
+                          label="Blur"
+                          value={tune.blur}
+                          min={0}
+                          max={60}
+                          disabled={!tunable.blur}
+                          format={(v) => `${v}px`}
+                          onChange={(blur) => updateTune({ blur })}
+                        />
+                        <Slider
+                          label="Grain"
+                          value={tune.grain}
+                          min={0}
+                          max={100}
+                          format={(v) => `${v}%`}
+                          onChange={(grain) => updateTune({ grain })}
+                        />
                       </div>
                     </InspectorSection>
 
@@ -591,6 +760,73 @@ export function Studio() {
                           onChange={(shape) => setOptions((o) => ({ ...o, shape }))}
                         />
                       )}
+                    </InspectorSection>
+
+                    <InspectorSection title="Frame">
+                      <Segmented
+                        value={effects.frame}
+                        values={FRAME_STYLES}
+                        labels={{ none: "None", glass: "Glass", solid: "Solid", line: "Line" }}
+                        onChange={(frame) => updateEffects({ frame })}
+                      />
+                      <Slider
+                        label="Width"
+                        value={effects.frameWidth}
+                        min={4}
+                        max={32}
+                        disabled={effects.frame === "none"}
+                        format={String}
+                        onChange={(frameWidth) => updateEffects({ frameWidth })}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection
+                      title="Shadow and tilt"
+                      action={
+                        differs(effects, DEFAULT_EFFECTS, DEPTH_KEYS) && (
+                          <ResetButton
+                            label="shadow and tilt"
+                            onClick={() =>
+                              updateEffects(Object.fromEntries(DEPTH_KEYS.map((key) => [key, DEFAULT_EFFECTS[key]])))
+                            }
+                          />
+                        )
+                      }
+                    >
+                      <div className="flex flex-col">
+                        <Slider
+                          label="Shadow"
+                          value={effects.shadow}
+                          min={0}
+                          max={100}
+                          format={(v) => `${v}%`}
+                          onChange={(shadow) => updateEffects({ shadow })}
+                        />
+                        <Slider
+                          label="Rotate"
+                          value={effects.rotate}
+                          min={-30}
+                          max={30}
+                          format={signed("°")}
+                          onChange={(rotate) => updateEffects({ rotate })}
+                        />
+                        <Slider
+                          label="Tilt X"
+                          value={effects.tiltX}
+                          min={-40}
+                          max={40}
+                          format={signed("°")}
+                          onChange={(tiltX) => updateEffects({ tiltX })}
+                        />
+                        <Slider
+                          label="Tilt Y"
+                          value={effects.tiltY}
+                          min={-40}
+                          max={40}
+                          format={signed("°")}
+                          onChange={(tiltY) => updateEffects({ tiltY })}
+                        />
+                      </div>
                     </InspectorSection>
 
                     <InspectorSection title="Show">
@@ -731,12 +967,88 @@ export function Studio() {
   );
 }
 
-function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
+function InspectorSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-3 px-5 py-4">
-      <h3 className="font-medium">{title}</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium">{title}</h3>
+        {action}
+      </div>
       {children}
     </div>
+  );
+}
+
+function ResetButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    // The negative margin keeps the header the height of its title, so the button never shifts the section.
+    <button
+      type="button"
+      aria-label={`Reset ${label}`}
+      onClick={onClick}
+      className="press -my-1 rounded-md px-1.5 py-1 text-xs text-muted transition-[color,scale] hover:text-ink"
+    >
+      Reset
+    </button>
+  );
+}
+
+/** A labelled range with its value alongside. The track fills from zero, or shows `track` instead. */
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  format,
+  onChange,
+  disabled,
+  track,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  format: (value: number) => string;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+  track?: string;
+}) {
+  const at = (v: number) => ((v - min) / (max - min)) * 100;
+  const zero = at(Math.min(max, Math.max(min, 0)));
+  return (
+    <label
+      title={disabled ? "Doesn't apply to this background" : undefined}
+      className={clsx("flex items-center gap-3 py-1.5", disabled && "opacity-40")}
+    >
+      <span className="w-[68px] shrink-0 text-muted">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        aria-valuetext={format(value)}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="slider min-w-0 flex-1"
+        style={
+          {
+            "--fill-from": `${Math.min(zero, at(value))}%`,
+            "--fill-to": `${Math.max(zero, at(value))}%`,
+            ...(track && { "--track": track }),
+          } as React.CSSProperties
+        }
+      />
+      <span className="w-11 shrink-0 text-right font-mono text-xs text-muted tabular-nums">{format(value)}</span>
+    </label>
   );
 }
 

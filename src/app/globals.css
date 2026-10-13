@@ -71,6 +71,105 @@ body {
   color: var(--color-ink);
 }
 
+/*
+ * Range inputs: a hairline track that fills in ink from zero (set --fill-from / --fill-to), or shows its own
+ * --track, under a white thumb that grows a little while held.
+ */
+.slider {
+  --track:
+    linear-gradient(
+      90deg,
+      transparent var(--fill-from),
+      var(--color-ink) var(--fill-from),
+      var(--color-ink) var(--fill-to),
+      transparent var(--fill-to)
+    ),
+    rgba(42, 42, 39, 0.12);
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.slider:disabled {
+  cursor: default;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--track);
+}
+
+.slider::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--track);
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(42, 42, 39, 0.25), 0 1px 3px rgba(42, 42, 39, 0.3);
+  transition: scale 150ms var(--ease-out);
+}
+
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(42, 42, 39, 0.25), 0 1px 3px rgba(42, 42, 39, 0.3);
+  transition: scale 150ms var(--ease-out);
+}
+
+/* The focus ring goes round the thumb rather than the whole input's box. */
+.slider:focus-visible {
+  outline: none;
+}
+
+.slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.slider:active:not(:disabled)::-webkit-slider-thumb {
+  scale: 1.15;
+}
+
+.slider:active:not(:disabled)::-moz-range-thumb {
+  scale: 1.15;
+}
+
+/* A thumb big enough for a fingertip on touch screens. */
+@media (pointer: coarse) {
+  .slider {
+    height: 28px;
+  }
+
+  .slider::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -9px;
+  }
+
+  .slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+  }
+}
+
 /* A lightly flecked paper surface helps the editor preview recede behind the card. */
 .preview-surface {
   background-color: #f6f5f1;
@@ -135,6 +234,7 @@ body {
 /* iOS paints the card's blurred shadow as a hard, offset block in exports, so those go out flat. */
 [data-flat-export] [data-card-shadow] {
   box-shadow: none !important;
+  filter: none !important;
 }
 
 /* Sections fade in the first time they're scrolled to. */

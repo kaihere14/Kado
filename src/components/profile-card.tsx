@@ -8,6 +8,24 @@ export type CardTheme = "light" | "dark";
 export type CardStyle = "native" | "minimal" | "ticket";
 export type CardShape = "square" | "rectangle";
 
+export const FRAME_STYLES = ["none", "glass", "solid", "line"] as const;
+export type FrameStyle = (typeof FRAME_STYLES)[number];
+
+/** How the card sits on the background: its frame, shadow and tilt. Kept when a new profile loads. */
+export interface CardEffects {
+  frame: FrameStyle;
+  /** Gap between card and frame edge, in px of the 360px design. */
+  frameWidth: number;
+  /** 0–100; 50 is each card's original shadow. */
+  shadow: number;
+  /** Degrees. `rotate` turns the card flat on the page; `tiltX` and `tiltY` lean it back in 3D. */
+  rotate: number;
+  tiltX: number;
+  tiltY: number;
+}
+
+export const DEFAULT_EFFECTS: CardEffects = { frame: "none", frameWidth: 12, shadow: 50, rotate: 0, tiltX: 0, tiltY: 0 };
+
 export interface CardOptions {
   style: CardStyle;
   shape: CardShape;
@@ -51,17 +69,111 @@ interface CardProps {
   options: CardOptions;
   /** Rendered width in CSS px; everything inside scales from it. */
   width: number;
+  /** Drop-shadow strength, 0–100. */
+  shadow: number;
 }
 
-export function ProfileCard(props: CardProps) {
+/** Corner radius of each style at the 360px design width. A frame adds its gap to stay concentric. */
+const RADIUS: Record<CardStyle, number> = { native: 16, minimal: 22, ticket: 12 };
+
+/**
+ * One soft drop shadow, scaled from how it looks at strength 50. Leave out `spread` for a `drop-shadow()`
+ * filter, which has none.
+ */
+function dropShadow(strength: number, { y, blur, spread, rgb, alpha }: { y: number; blur: number; spread?: number; rgb: string; alpha: number }) {
+  const s = strength / 50;
+  return `0 ${y * s}px ${blur * s}px${spread === undefined ? "" : ` ${spread * s}px`} rgba(${rgb}, ${Math.min(1, alpha * s)})`;
+}
+
+const LIFT = { y: 18, blur: 40, spread: -18, rgb: "22,22,63", alpha: 0.45 };
+
+function frameLook(frame: Exclude<FrameStyle, "none">, darkCard: boolean, darkBackdrop: boolean) {
+  switch (frame) {
+    case "solid":
+      // A mat a shade off the card's own surface, so the card's edge still reads against it.
+      return { background: darkCard ? "#232326" : "#f4f3ef", line: darkCard ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.05)" };
+    case "glass":
+      return darkBackdrop
+        ? { background: "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.07))", line: "rgba(255,255,255,.22)" }
+        : { background: "linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,.4))", line: "rgba(255,255,255,.85)" };
+    case "line":
+      return { background: undefined, line: darkBackdrop ? "rgba(255,255,255,.45)" : "rgba(42,42,39,.28)" };
+  }
+}
+
+// A card on a glass or solid frame keeps a faint lift of its own; the frame carries the main shadow.
+const SHADOW_IN_FRAME = 12;
+
+export function ProfileCard({
+  effects = DEFAULT_EFFECTS,
+  darkBackdrop = true,
+  ...props
+}: Omit<CardProps, "shadow"> & { effects?: CardEffects; darkBackdrop?: boolean }) {
+  const { frame, frameWidth, shadow, rotate, tiltX, tiltY } = effects;
+  const scale = props.width / 360;
+  const surfaceFrame = frame === "glass" || frame === "solid";
+  const cardProps = { ...props, shadow: surfaceFrame ? Math.min(shadow, SHADOW_IN_FRAME) : shadow };
+
+  let card: React.ReactNode;
   switch (props.options.style) {
     case "minimal":
-      return <MinimalCard {...props} />;
+      card = <MinimalCard {...cardProps} />;
+      break;
     case "ticket":
-      return <TicketCard {...props} />;
+      // The notch mask would clip a box-shadow, so the ticket's shadow follows its outline instead.
+      card = (
+        <div
+          data-card-shadow
+          style={{
+            filter: cardProps.shadow
+              ? `drop-shadow(${dropShadow(cardProps.shadow, { y: 10, blur: 16, rgb: "22,22,63", alpha: 0.35 })})`
+              : undefined,
+          }}
+        >
+          <TicketCard {...cardProps} />
+        </div>
+      );
+      break;
     default:
-      return <NativeCard {...props} />;
+      card = <NativeCard {...cardProps} />;
   }
+
+  if (frame !== "none") {
+    const gap = frameWidth * scale;
+    const border = frame === "line" ? 1.5 * scale : 1;
+    const look = frameLook(frame, props.options.theme === "dark", darkBackdrop);
+    card = (
+      <div
+        data-card-shadow
+        style={{
+          padding: gap,
+          borderRadius: RADIUS[props.options.style] * scale + gap + border,
+          border: `${border}px solid ${look.line}`,
+          background: look.background,
+          boxShadow: surfaceFrame && shadow ? dropShadow(shadow, LIFT) : undefined,
+        }}
+      >
+        {card}
+      </div>
+    );
+  }
+
+  const tilted = tiltX || tiltY;
+  return (
+    <div
+      data-card-tilt
+      style={{
+        // A perspective a few card-widths away keeps the tilt readable without fish-eye distortion.
+        transform: tilted
+          ? `perspective(${props.width * 2.5}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) rotate(${rotate}deg)`
+          : rotate
+            ? `rotate(${rotate}deg)`
+            : undefined,
+      }}
+    >
+      {card}
+    </div>
+  );
 }
 
 function useCardBasics({ profile, options, width }: CardProps) {
@@ -136,10 +248,12 @@ function NativeCard(props: CardProps) {
         width,
         // A cap, not a fixed height: profiles without a bio or banner would leave an empty block.
         maxHeight: rectangular ? width * 0.74 : undefined,
-        borderRadius: 16 * scale,
+        borderRadius: RADIUS.native * scale,
         fontSize: 14 * scale,
         background: surface,
-        boxShadow: "0 1px 0 rgba(0,0,0,.06), 0 18px 40px -18px rgba(22,22,63,.45)",
+        boxShadow: ["0 1px 0 rgba(0,0,0,.06)", props.shadow && dropShadow(props.shadow, LIFT)]
+          .filter(Boolean)
+          .join(", "),
       }}
     >
       {hasBannerSlot && (
@@ -271,11 +385,18 @@ function MinimalCard(props: CardProps) {
         maxHeight: rectangular ? width * 0.74 : undefined,
         padding: rectangular ? `${22 * scale}px ${24 * scale}px ${18 * scale}px` : `${28 * scale}px ${24 * scale}px ${22 * scale}px`,
         fontSize: 14 * scale,
-        borderRadius: 22 * scale,
+        borderRadius: RADIUS.minimal * scale,
         background: dark ? "rgba(30,30,28,0.86)" : "rgba(255,255,255,0.86)",
-        boxShadow: dark
-          ? "inset 0 0 0 1px rgba(255,255,255,.08), 0 20px 50px -20px rgba(0,0,0,.6)"
-          : "inset 0 0 0 1px rgba(255,255,255,.9), 0 1px 2px rgba(42,42,39,.06), 0 20px 50px -24px rgba(42,42,39,.35)",
+        boxShadow: (dark
+          ? ["inset 0 0 0 1px rgba(255,255,255,.08)", props.shadow && dropShadow(props.shadow, { y: 20, blur: 50, spread: -20, rgb: "0,0,0", alpha: 0.6 })]
+          : [
+              "inset 0 0 0 1px rgba(255,255,255,.9)",
+              "0 1px 2px rgba(42,42,39,.06)",
+              props.shadow && dropShadow(props.shadow, { y: 20, blur: 50, spread: -24, rgb: "42,42,39", alpha: 0.35 }),
+            ]
+        )
+          .filter(Boolean)
+          .join(", "),
         backdropFilter: "blur(12px)",
       }}
     >
@@ -342,7 +463,7 @@ function TicketCard(props: CardProps) {
         width,
         minHeight: width * 0.48,
         fontSize: 13 * scale,
-        borderRadius: 12 * scale,
+        borderRadius: RADIUS.ticket * scale,
         background: dark ? "#2a2a27" : "#ffffff",
         mask,
         WebkitMask: mask,

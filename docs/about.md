@@ -59,7 +59,9 @@ src/
     platforms.ts                     Platform list, the Profile type, handle parsing, number formatting
     fetchers.ts                      One fetcher per platform (server only)
     formats.ts                       Export sizes and the 2x scale
-    backdrops.ts                     Background gradients and the film grain
+    backdrops.ts                     Background gradients, film grain and background adjustments
+    color.ts                         Hex <-> OKLCH, for turning a gradient's hue
+    warp.ts                          Projects a flat render of a tilted card onto the export
     saved-studio.ts                  Save and restore the studio in localStorage
 ```
 
@@ -244,6 +246,15 @@ Other details:
 - **Numbers** under 10,000 are written in full (`8,612`); larger ones are shortened (`18.4K`).
 - **Images** go through `proxied()`, which rewrites remote URLs to `/api/image?url=...`. Uploaded images (`data:` URLs) are left as they are.
 
+**Frame, shadow and tilt** (`CardEffects`) sit around the card rather than inside it, so they stay put when a new profile loads:
+
+| Setting | How it's drawn |
+|---|---|
+| Frame | A wrapper with padding: **Glass** (translucent white), **Solid** (an off-white or dark mat) or **Line** (a stroke only). Its radius is the card's radius plus the gap, so the corners stay concentric. Glass and Line switch to darker tones on light backgrounds. |
+| Shadow | 0–100, where 50 is each card's original shadow. With a Glass or Solid frame, the frame carries the shadow and the card keeps a faint one. The Ticket's notch mask would clip a `box-shadow`, so it gets a `drop-shadow()` filter instead. |
+| Rotate | `rotate()`, flat on the page. |
+| Tilt X / Tilt Y | `perspective(2.5 × card width) rotateX() rotateY()` on the wrapper marked `data-card-tilt`. |
+
 ### Step 5: Lay out the frame and background
 
 The frame is a `<div>` exactly the size of the export format:
@@ -265,6 +276,17 @@ backgroundBlendMode: "overlay, normal, normal",
 
 An uploaded background is a `data:` URL shown with `center / cover`.
 
+**Background adjustments** (`BackdropTune`) are applied by `tunedBackdrop` when the frame renders. Picking a new background resets them to that background's defaults.
+
+| Setting | Gradient backgrounds | Uploaded image |
+|---|---|---|
+| Hue | Every hex colour turns by the same angle in OKLCH, which keeps lightness steady. Colours pushed out of sRGB give up chroma until they fit. | Not available |
+| Intensity | Every colour stop's position is multiplied by up to 1.64× (or down to 0.61×), so the light reaches further or shrinks. Sizes and positions, which also end in `%`, are left alone. | `brightness()` |
+| Blur | CSS `blur()` on the background layer, which bleeds three radii past the frame so the edges don't fade. | Blurred in script, see [bug 13](#bugs-we-found-and-fixed) |
+| Grain | The same noise tile on its own layer, blended with `mix-blend-mode: overlay`, so blurring the background doesn't smear it. | Same |
+
+A slider that can't change the current background (Hue on Graphite, Blur on Black) is disabled rather than hidden, so the panel never changes height.
+
 ### Step 6: Export the image
 
 Both buttons call `exportImage` in `studio.tsx`.
@@ -274,7 +296,12 @@ Download or Copy pressed
   └─ already exporting? → ignore the tap, the spinner keeps going
   └─ renderFrame(node)
        ├─ iOS: add data-flat-export, which removes the card's shadow
-       ├─ toCanvas(node), at 2×        (iOS: 5 times, keep the last)
+       ├─ card not rotated or tilted?
+       │    └─ toCanvas(node), at 2×   (iOS: 5 times, keep the last)
+       ├─ otherwise
+       │    ├─ toCanvas(node) without the card          → the background
+       │    ├─ toCanvas(card) flat, padded, at 3×       → the card and its shadow
+       │    └─ drawProjected: warp the card through its CSS transform onto the background
        └─ remove data-flat-export
   └─ canvas → PNG Blob
   └─ Download → blob: URL → <a download="kado-<handle>-<format>.png">
@@ -296,6 +323,7 @@ The options passed to html-to-image:
 
 Important details:
 
+- **Tilted cards are projected in script.** WebKit draws transforms inside the exported SVG without perspective, so a 3D tilt comes out as a flat squash, and it smears the shadows of rotated elements. `warp.ts` reads the card's computed `transform` and `transform-origin`, builds the 3×3 projective matrix from flat-render pixels to export pixels, and, for every export pixel in the card's bounding box, maps back to the flat render and takes four bilinear samples. Sampling uses premultiplied alpha, so the card's edges and shadow don't pick up dark fringes. Every browser takes this path, so what's tested in Chrome is what Safari gets.
 - **Copy passes a promise, not an image.** `new ClipboardItem({ "image/png": renderPromise })`. Safari only allows copying straight after a tap, and rendering takes longer than that. Handing over a promise lets Safari wait for it.
 - **Downloads use a `blob:` URL**, not a `data:` URL, and each one is kept until the next download replaces it. See [bug 8](#bugs-we-found-and-fixed).
 - **One export at a time.** `exportingRef` is set when an export starts and cleared when it ends, whether it succeeded or failed. Taps in between are ignored.
@@ -303,13 +331,13 @@ Important details:
 
 ### Step 7: Remember the session
 
-`saved-studio.ts` saves the platform, input, profile, options, background and format under the key `kado:studio:v1`.
+`saved-studio.ts` saves the platform, input, profile, options, background, background adjustments, card effects and format under the key `kado:studio:v1`.
 
 - It saves 300 ms after you stop editing, and again on `pagehide`, so a refresh mid-typing keeps the last keystroke.
 - It restores **after** the page has loaded in the browser, not during server rendering. The server can't read `localStorage`, and restoring earlier would make the server HTML and the browser HTML disagree (a hydration mismatch).
 - Preset backgrounds are saved by id, so if a gradient is tweaked later, old sessions get the new look.
 - If uploaded images push it past the browser's storage limit (about 5 MB), it saves again without the uploads, so at least your typed details survive.
-- The `v1` in the key gets bumped whenever the saved shape changes, so an old save is dropped instead of misread.
+- The `v1` in the key gets bumped whenever the saved shape changes, so an old save is dropped instead of misread. New fields with a default don't need a bump: `withDefaults` fills in anything a save from before the field existed is missing.
 
 ## Bugs we found and fixed
 
@@ -456,6 +484,14 @@ for (let i = 1; ios && i < IOS_RENDER_PASSES; i++) {
 
 iOS limits the total memory all canvases on a page can use, and past that new canvases come out blank. Shrinking each discarded canvas to 0 × 0 frees its memory immediately, so 5 renders don't add up. Exports on iPhone take a little longer as a result; every other device still renders once.
 
+### 13. Blurred uploads faded at the edges on Safari
+
+**Seen:** With a blurred uploaded background, Safari exports faded to transparent around the edges, worst in the corners. Gradients blurred fine.
+
+**Cause:** WebKit paints only the part of a background image that falls inside the frame, then blurs it. The 3-radius bleed past the frame never gets painted, so the blur pulls in transparency.
+
+**Fix:** Uploads are blurred in script (`blurImage`): the image is shrunk until the blur radius is about 4 px, run through three box-blur passes that repeat the edge pixels, and shown with `cover` like any upload. The preview uses a CSS blur while the slider moves and switches to the scripted one 120 ms after it stops. As a side effect, the small blurred image also decodes in time for the first Safari export.
+
 ## What we tried and dropped
 
 | Idea | Why we dropped it |
@@ -468,7 +504,8 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 
 ## Known limits
 
-- **iPhone exports have no card shadow** and take a little longer than on other devices.
+- **iPhone exports have no card shadow** and take a little longer than on other devices. The Shadow slider still changes the preview.
+- **A tilted card is resampled.** It's rendered at 3× and projected down to 2×, so its text is a touch softer than on a flat card.
 - **Copy needs https.** On a local network address it falls back to a download.
 - **Instagram** gives no bio, and the embed fallback gives no following count. You fill those in by hand.
 - **YouTube and Instagram counts are rounded**, the same way those sites show them (`21.4M`).
