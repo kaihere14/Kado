@@ -42,19 +42,17 @@ kado makes a clean, share-ready image of your profile. Type a handle, and it pul
 
 ## Card styles
 
-<table>
-  <tr>
-    <td width="33%"><img src="docs/style-native.png" alt="Native style on the Wave background" /></td>
-    <td width="33%"><img src="docs/style-minimal.png" alt="Minimal style, dark, on the Graphite background" /></td>
-    <td width="33%"><img src="docs/style-ticket.png" alt="Ticket style on the Horizon background" /></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Native</b><br><sub>Reads like the platform's own profile header</sub></td>
-    <td align="center"><b>Minimal</b><br><sub>Centered and quiet, one row of numbers</sub></td>
-    <td align="center"><b>Ticket</b><br><sub>An admission ticket with a perforated stub</sub></td>
-  </tr>
-</table>
+| | | |
+|---|---|---|
+| Native | Minimal | Ticket |
+| Reads like the platform's own profile header | Centered and quiet, one row of numbers | An admission ticket with a perforated stub |
 
+Frames can now be set to **Glass**, **Solid**, or **Line**, with adjustable width, stronger or softer shadows, rotation, and 3D tilt. Backgrounds get hue (in OKLCH so lightness holds), intensity, blur, and grain controls, and uploaded photos are checked for light or dark so frames pick matching tones.
+
+| | |
+|---|---|
+| <img src="docs/style-native.png" alt="Native style on the Wave background" width="33%" /> | <img src="docs/style-minimal.png" alt="Minimal style, dark, on the Graphite background" width="33%" /> |
+| <img src="docs/style-ticket.png" alt="Ticket style on the Horizon background" width="33%" /> | | |
 ## Getting started
 
 kado needs Node.js 20 or newer and [pnpm](https://pnpm.io).
