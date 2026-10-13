@@ -466,7 +466,7 @@ export function Studio() {
             onSubmit={generate}
             className="group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full border border-transparent bg-white py-1.5 pr-1.5 pl-4 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition-[box-shadow] focus-within:ring-black/20 sm:pl-5"
           >
-            <span className="shrink-0 text-[14px] text-muted/70 sm:text-[15px]">{config.prefix}</span>
+            <span className="shrink-0 text-[14px] text-muted sm:text-[15px]">{config.prefix}</span>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
