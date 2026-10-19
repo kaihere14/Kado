@@ -4,6 +4,8 @@ An Express server for kado's Website tab. `GET /api/capture?url=example.com` ope
 
 - It refuses local and private network addresses, for the link and for every request the page makes, redirects included.
 - Each visitor gets 20 captures every 10 minutes, and at most 2 captures run at once. Past either limit it answers 429 or 503.
+- `GET /api/health` returns `{ ok, running, uptime }`, for uptime checks and Render's Health Check Path.
+- Each capture logs its start, result and duration, and a failure logs the full error, so Render's logs show why a capture failed.
 - Chrome's sandbox stays on. If Chrome won't start on your host ("No usable sandbox" in the logs), set `CHROME_NO_SANDBOX=true`. That turns off a layer of protection against malicious pages, so only do it when the host leaves no other choice.
 
 Run it locally:
