@@ -165,7 +165,7 @@ youtube: {
 
 **Why:** A screenshot needs a real browser. Vercel functions can't run Puppeteer's Chrome as it ships, and the Linux build made for them (`@sparticuz/chromium`) would use up the function quota quickly, since every capture needs 1–2 GB for several seconds. Calling Render from the browser keeps captures off Vercel entirely. See [what we tried and dropped](#what-we-tried-and-dropped).
 
-**Trade-off:** Captures depend on a second service being up. The capture server is deliberately minimal: no rate limit and no check on the addresses it opens.
+**Trade-off:** Captures depend on a second service being up. Because its Chrome opens pages strangers choose, the capture server refuses local and private network addresses (for the link and every request the page makes), allows 20 captures per visitor every 10 minutes and 2 at once, and keeps Chrome's sandbox on unless `CHROME_NO_SANDBOX=true`.
 
 ### 10. Presets carry a separate look for screenshots
 
@@ -594,7 +594,7 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 - **Instagram** gives no bio, and the embed fallback gives no following count. You fill those in by hand.
 - **YouTube and Instagram counts are rounded**, the same way those sites show them (`21.4M`).
 - **Website captures need the capture server.** Without `NEXT_PUBLIC_CAPTURE_URL`, or with the server down, the Website tab shows an error. Some sites block headless browsers or servers in data centres, and pages that rely on WebGL can come out blank.
-- **The capture server is open.** It has no rate limit, and it opens whatever address it's given, including local and private network addresses on Render's side.
+- **The address check runs before Chrome connects, not during.** A domain that answers the check with a public address and Chrome with a private one (DNS rebinding) could slip past it.
 - **Scraped sources can change.** The YouTube and Instagram fetchers read pages that aren't official APIs. `findKey` makes YouTube more tolerant of layout changes, but a big redesign could break either fetcher.
 
 ## Working on kado

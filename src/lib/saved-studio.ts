@@ -71,11 +71,14 @@ function restoreSource(saved: Partial<SavedStudio>): { source: Source; platform:
   return { source: isPlatformId(legacy) ? "profile" : "image", platform };
 }
 
+/** A restored session. `profile` is null when the saved one belongs to a platform that's gone, such as LinkedIn. */
+export type RestoredStudio = Omit<SavedStudio, "profile"> & { profile: Profile | null };
+
 /** Reads the last session's studio, or null when there is none or it no longer fits the current shape. */
-export function loadStudio(): SavedStudio | null {
+export function loadStudio(): RestoredStudio | null {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<SavedStudio> | null;
-    if (!saved || !isProfile(saved.profile)) return null;
+    if (!saved) return null;
     // Presets are saved by id, so a tweaked gradient shows its current look rather than a stale copy.
     const backdrop =
       saved.backdrop && "upload" in saved.backdrop
@@ -88,7 +91,8 @@ export function loadStudio(): SavedStudio | null {
     return {
       ...restoreSource(saved),
       input: typeof saved.input === "string" ? saved.input : "",
-      profile: saved.profile,
+      // An unreadable profile is dropped on its own; the background, effects, format and image still come back.
+      profile: isProfile(saved.profile) ? saved.profile : null,
       image: isCardImage(saved.image) ? saved.image : null,
       imageStyle: IMAGE_STYLES.includes(saved.imageStyle!) ? saved.imageStyle! : IMAGE_STYLES[0],
       options,

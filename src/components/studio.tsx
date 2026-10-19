@@ -236,10 +236,10 @@ export function Studio() {
       setSource(saved.source);
       setPlatform(saved.platform);
       setInput(saved.input);
-      setProfile(saved.profile);
+      if (saved.profile) setProfile(saved.profile);
       setImage(saved.image);
       setImageStyle(saved.imageStyle);
-      setOptions({ ...defaultOptions(saved.profile.platform), ...saved.options });
+      setOptions({ ...defaultOptions(saved.profile?.platform ?? SAMPLE.platform), ...saved.options });
       setBackdrop(saved.backdrop);
       setTune(saved.tune);
       setEffects(saved.effects);
@@ -380,6 +380,10 @@ export function Studio() {
     const address = site.trim();
     if (!address) return;
     setError(null);
+    if (!CAPTURE_URL) {
+      setError("Website capture isn't set up here yet. Try an image or a profile.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${CAPTURE_URL}/api/capture?url=${encodeURIComponent(address)}`).catch(() => {
