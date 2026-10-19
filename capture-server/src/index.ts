@@ -47,6 +47,9 @@ function getChrome(): Promise<Browser> {
 /** Loads the page in a 1440 × 900 window at 2x and returns a JPEG of what's on screen. */
 async function capture(page: Page, url: URL): Promise<Uint8Array> {
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
+  // Sites behind bot protection (Cloudflare and the like) turn away a browser that calls itself HeadlessChrome.
+  const userAgent = (await page.browser().userAgent()).replace("HeadlessChrome/", "Chrome/");
+  await page.setUserAgent({ userAgent });
 
   // Every request the page makes, redirects included, must go to a public address too.
   const verdicts = new Map<string, Promise<boolean>>();
@@ -63,8 +66,9 @@ async function capture(page: Page, url: URL): Promise<Uint8Array> {
 
   // The page's HTML has to arrive; after that it gets up to 8 seconds to settle. Pages with live widgets or
   // analytics never go fully quiet, so whatever has rendered by then is captured.
+  // Chrome keeps its cache between captures, so a page seen before can come back 304 Not Modified: still a page.
   const response = await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: 20_000 });
-  if (response && !response.ok()) throw new Error(`HTTP ${response.status()} from ${url.href}`);
+  if (response && response.status() >= 400) throw new Error(`HTTP ${response.status()} from ${url.href}`);
   await page.waitForNetworkIdle({ idleTime: 500, timeout: 8_000 }).catch(() => {});
   // A moment for fonts and entrance animations.
   await new Promise((resolve) => setTimeout(resolve, 600));
