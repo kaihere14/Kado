@@ -68,7 +68,7 @@ pnpm dev
 
 Open [localhost:3000](http://localhost:3000). No keys are required.
 
-The Website tab needs the capture server in [`capture-server/`](capture-server). Start it with `npm install && npm run build && npm start` in that folder, then add its address to `.env.local`:
+The Website tab needs the capture server in [`capture-server/`](capture-server). Start it with `npm install && npm run dev` in that folder, then add its address to `.env.local`:
 
 ```sh
 NEXT_PUBLIC_CAPTURE_URL=http://localhost:10000

@@ -603,7 +603,7 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 - **Test export changes on a real iPhone, over https.** Chrome on a desktop doesn't show WebKit's quirks, and copying only works on https (or `localhost`). A Vercel preview deployment works well for this.
 - To test on a phone over your local network, add your computer's IP address to `allowedDevOrigins` in `next.config.ts`. Expect Copy to download instead.
 - Set `GITHUB_TOKEN` in `.env.local` if you hit GitHub's limit of 60 requests an hour.
-- For the Website tab, run the capture server (`npm install && npm run build && npm start` in `capture-server/`) and set `NEXT_PUBLIC_CAPTURE_URL=http://localhost:10000` in `.env.local`.
+- For the Website tab, run the capture server (`npm install && npm run dev` in `capture-server/`) and set `NEXT_PUBLIC_CAPTURE_URL=http://localhost:10000` in `.env.local`.
 
 <p align="center">
   <sub>Back to the <a href="../README.md">README</a></sub>

@@ -7,9 +7,10 @@ Run it locally:
 ```sh
 cd capture-server
 npm install
-npm run build
-npm start   # http://localhost:10000
+npm run dev   # http://localhost:10000, restarts on changes
 ```
+
+Both `npm run dev` and `npm run build` download Chrome into `.cache/` the first time. For production, `npm run build` also compiles to `dist/`, and `npm start` runs it.
 
 On Render, create a Web Service with:
 
