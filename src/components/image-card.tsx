@@ -2,6 +2,7 @@ import type { CardImage } from "@/lib/card-image";
 import {
   CardMount,
   cardShadow,
+  cornerRadius,
   DEFAULT_EFFECTS,
   dropShadow,
   LIFT,
@@ -17,7 +18,7 @@ const DESIGN_WIDTH = 480;
 
 /** Each style's chrome at the design width: padding round the image, title bar height and corner radius. */
 const CHROME: Record<ImageStyle, { pad: number; bar: number; radius: number }> = {
-  // A slim mat: the image's corners (radius − padding) come out the same as the plain style's.
+  // A slim mat: at curved corners the image's (radius − padding) come out the same as the plain style's.
   card: { pad: 6, bar: 0, radius: 18 },
   window: { pad: 0, bar: 26, radius: 12 },
   plain: { pad: 0, bar: 0, radius: 12 },
@@ -80,7 +81,8 @@ export function ImageCard({
   darkBackdrop?: boolean;
 }) {
   const scale = width / DESIGN_WIDTH;
-  const { pad, bar, radius } = CHROME[style];
+  const { pad, bar } = CHROME[style];
+  const radius = cornerRadius(CHROME[style].radius, effects.corners);
   const dark = theme === "dark";
   const shadow = cardShadow(effects);
   const lift = shadow ? dropShadow(shadow, LIFT) : null;
@@ -144,7 +146,7 @@ export function ImageCard({
           }}
         >
           {/* Inner radius = card radius − padding, so the corners stay concentric. */}
-          <div className="relative overflow-hidden" style={{ borderRadius: (radius - pad) * scale }}>
+          <div className="relative overflow-hidden" style={{ borderRadius: Math.max(0, radius - pad) * scale }}>
             <Picture image={image} width={width - 2 * pad * scale} />
             <Edge dark={dark} />
           </div>

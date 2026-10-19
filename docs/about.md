@@ -254,7 +254,7 @@ An image goes into `ImageCard`, in one of three styles:
 
 | Style | How it's drawn |
 |---|---|
-| Card | The image on a thin mat: 6 px of padding at a 480 px card width. The image's corners (radius 18 − 6) match the Plain style's. |
+| Card | The image on a thin mat: 6 px of padding at a 480 px card width. With Curved corners, the image's (radius 18 − 6) match the Plain style's. |
 | Window | A title bar with three dots above the image, edge to edge. |
 | Plain | The image alone, with rounded corners. |
 
@@ -286,14 +286,19 @@ Other details:
 - **Numbers** under 10,000 are written in full (`8,612`); larger ones are shortened (`18.4K`).
 - **Images** go through `proxied()`, which rewrites remote URLs to `/api/image?url=...`. Uploaded images (`data:` URLs) are left as they are.
 
-**Frame, shadow and tilt** (`CardEffects`) sit around the card rather than inside it, so they stay put when a new profile or image loads. `CardMount` in `profile-card.tsx` draws them for both kinds of card:
+**Corners, frame, shadow, tilt and position** (`CardEffects`) sit around the card rather than inside it, so they stay put when a new profile or image loads. `CardMount` in `profile-card.tsx` draws the frame and tilt for both kinds of card:
 
 | Setting | How it's drawn |
 |---|---|
+| Corners | **Sharp**, **Curved** or **Round**. Curved is each style's own radius (Native 16, Minimal 22, Ticket 12; image Card 18, Window and Plain 12); `cornerRadius` scales it by 0 for Sharp and 2 for Round, so a style keeps its character. The Card style's inner image radius is the outer one minus the padding, floored at 0. |
 | Frame | A wrapper with padding: **Glass** (translucent white), **Solid** (an off-white or dark mat) or **Line** (a stroke only). Its radius is the card's radius plus the gap, so the corners stay concentric. Glass and Line switch to darker tones on light backgrounds. |
+| Frame colour | `""` (Automatic) keeps the looks above. A `#rrggbb` colour tints Glass (the same fade, at 60% to 30% alpha), fills Solid, or strokes Line. A Solid frame's hairline turns light when the colour is dark (OKLCH lightness under 0.6). |
 | Shadow | 0–100, where 50 is each card's original shadow. With a Glass or Solid frame, the frame carries the shadow and the card keeps a faint one. The Ticket's notch mask would clip a `box-shadow`, so it gets a `drop-shadow()` filter instead. |
 | Rotate | `rotate()`, flat on the page. |
 | Tilt X / Tilt Y | `perspective(2.5 × card width) rotateX() rotateY()` on the wrapper marked `data-card-tilt`. |
+| Position | `x` and `y`: where the card's centre sits, as a share of the frame's width and height from its centre (−0.5 to 0.5), so the card keeps its place when the format changes. `renderCard` applies it as `left` / `top` on a relatively positioned wrapper, not a transform: the tilted export's projection reads `offsetLeft` / `offsetTop`, which ignore transforms. |
+
+**Moving the card:** drag it in the preview. Pointer events on the card's wrapper turn screen pixels into a share of the frame through `previewScale`, and keep its centre inside the frame. While it moves, dashed centre lines are drawn over the preview (outside the `Scene`, so they never reach the export, and with `mix-blend-mode: difference`, so they show on any background). Within 8 screen px of a line, the card snaps onto it and that line brightens; near both, it lands in the centre. A double-click, or Reset under Layout, puts it back in the middle. The card cancels `dragstart`, or the browser's own image drag would show the page's "Drop it to make a card" overlay.
 
 ### Step 7: Lay out the frame and background
 
@@ -334,12 +339,16 @@ The settings sit under three tabs, pinned above them: in their own row on deskto
 | Tab | Sections |
 |---|---|
 | Canvas | Format, Background |
-| Card | Style, Layout (theme, shape, size), Frame, Shadow and tilt, then Show and Edit details for a profile, or the Image section for an image |
+| Card | Style, Corners, Layout (theme, shape, size), Frame (type, colour, width), Shadow and tilt, then Show and Edit details for a profile, or the Image section for an image |
 | Presets | 17 finished looks |
 
 Switching tabs opens the new one at its top. Left and right arrow keys move between tabs.
 
-`applyPreset` sets the background, adjustments, effects, theme, size and style in one go; the format and what's on the card stay put. A preset's tile stays highlighted until any of those settings changes by hand. Each tile renders a `Scene`, the same full-size frame the preview uses, scaled down into the tile once its width is known, which also keeps the miniatures out of the server HTML.
+Style, Corners and Shadow are picked from square preview tiles (`OptionTile`). Style tiles draw your real card in each style, with your corners, scaled to fit by `Fit`, which measures the full-size card and the tile with a `ResizeObserver`. Corner tiles show a card's corner tucked into the tile; Shadow tiles (None 0, Soft 50, Strong 90) show a small card lifted by that shadow, and set the Shadow slider, which still fine-tunes it.
+
+**Full screen:** the green light in the studio's title bar, which always shows its macOS glyph, grows the window to cover the viewport (`fixed inset-0`). The preview gets more room and the inspector widens from 320 to 360 px; on phones the preview takes about half the screen and the window scrolls inside itself. The page behind stops scrolling, and Escape or the green light steps back out. The `ResizeObserver` behind `previewScale` resizes the frame both ways.
+
+`applyPreset` sets the background, adjustments, effects, theme, size and style in one go; the format and what's on the card stay put. No preset sets the corners, frame colour or position, so `lookOf` carries yours into each preset: applying one keeps them, its tile previews them, and they don't stop a tile from reading as picked. A preset's tile stays highlighted until any of those settings changes by hand. Each tile renders a `Scene`, the same full-size frame the preview uses, scaled down into the tile once its width is known, which also keeps the miniatures out of the server HTML.
 
 ### Step 9: Export the image
 
@@ -391,7 +400,7 @@ Important details:
 - It restores **after** the page has loaded in the browser, not during server rendering. The server can't read `localStorage`, and restoring earlier would make the server HTML and the browser HTML disagree (a hydration mismatch).
 - Preset backgrounds are saved by id, so if a gradient is tweaked later, old sessions get the new look.
 - If uploaded images push it past the browser's storage limit (about 5 MB), it saves again without the uploads, so at least your typed details survive.
-- Older saves still load. A save from before the Profile tab kept the tab in `platform` (for example `"github"`), and opens on Profile with that platform; a LinkedIn save opens on Image. A size saved as `S`, `M` or `L` becomes 25, 50 or 75.
+- Older saves still load. A save from before the Profile tab kept the tab in `platform` (for example `"github"`), and opens on Profile with that platform; a LinkedIn save opens on Image. A size saved as `S`, `M` or `L` becomes 25, 50 or 75. Saves from before corners, frame colour and position get Curved, Automatic and the centre; an unknown corner style or a malformed colour falls back the same way.
 - The `v1` in the key gets bumped whenever the saved shape changes, so an old save is dropped instead of misread. New fields with a default don't need a bump: `withDefaults` fills in anything a save from before the field existed is missing.
 
 ## Bugs we found and fixed
@@ -570,6 +579,22 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 **Cause:** Presets applied the profile card's settings to image cards too.
 
 **Fix:** Presets have their own `image` look. Image looks keep to light chrome, and use the Plain style whenever there's a frame, so the frame is the only border. Card style's padding was also halved.
+
+### 17. Full screen came out as a thin strip
+
+**Seen:** Clicking the green light turned the studio into a 64 px strip in the middle of the page instead of covering the viewport.
+
+**Cause:** The section's fade-in (`.reveal.is-visible`) used `animation-fill-mode: both`. Once finished, the animation still held `transform` and `filter`, which made the section the containing block for anything `position: fixed` inside it. The window's `inset: 0` filled the section, which had collapsed to its padding.
+
+**Fix:** The fade-in fills `backwards`. Its keyframes only set the `from` state, so it looks the same, and it lets go of the transform once it ends.
+
+### 18. The inspector slid out of the window after full screen
+
+**Seen:** After leaving full screen, the settings panel sat 184 px past the window's right edge.
+
+**Cause:** The preview column was `1fr`, which is `minmax(auto, 1fr)`: it can't shrink below its content. The preview frame has a set width from `previewScale`, so the big full-screen frame kept the column wide, and the `ResizeObserver` kept measuring that width.
+
+**Fix:** Both layouts use `minmax(0, 1fr)`, so the column shrinks back and the frame follows it.
 
 ## What we tried and dropped
 

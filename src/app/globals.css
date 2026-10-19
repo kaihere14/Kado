@@ -50,6 +50,12 @@ body {
   p {
     text-wrap: pretty;
   }
+
+  /* Tailwind 4 leaves buttons on the default arrow; every one here is clickable, so it shows a hand. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }
 
 /* Pressable controls give slightly under the finger. Pair with a transition that names `scale`. */
@@ -275,9 +281,10 @@ body {
   filter: none !important;
 }
 
-/* Sections fade in the first time they're scrolled to. */
+/* Sections fade in the first time they're scrolled to. Backwards, not both: a held transform would make the
+   section the containing block of anything fixed inside it, like the full-screen studio. */
 .reveal.is-visible {
-  animation: fade-in 300ms var(--ease-out) both;
+  animation: fade-in 300ms var(--ease-out) backwards;
 }
 
 /* Only hide what script will reveal, so the page still reads with JavaScript off. */
