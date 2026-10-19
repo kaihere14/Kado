@@ -1,6 +1,6 @@
 # kado capture server
 
-An Express server for kado's Website tab. `GET /api/capture?url=example.com` opens the page in headless Chrome and returns a JPEG of the top of it.
+An Express server for kado's Website tab. `GET /api/capture?url=example.com` opens the page in a tab of one long-running headless Chrome (Puppeteer) and returns a JPEG of the top of it. Chrome starts with the server, so captures don't wait for it.
 
 - It refuses local and private network addresses, for the link and for every request the page makes, redirects included.
 - Each visitor gets 20 captures every 10 minutes, and at most 2 captures run at once. Past either limit it answers 429 or 503.

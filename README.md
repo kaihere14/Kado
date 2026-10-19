@@ -100,7 +100,7 @@ To build for production, run `pnpm build` and then `pnpm start`. kado runs on an
 
 Profile requests go through Next.js route handlers and are cached for an hour. Photos and banners load through a same-origin image proxy, which only accepts the X, GitHub, YouTube and Instagram image CDNs. That lets the browser draw them into the exported PNG.
 
-Website captures come from a small Express server in `capture-server/`, which the browser calls directly. It opens the page in headless Chrome through [capture-website](https://github.com/sindresorhus/capture-website), in a 1440 × 900 window at 2×, and returns a JPEG. It refuses local and private network addresses, and limits how many captures a visitor can make.
+Website captures come from a small Express server in `capture-server/`, which the browser calls directly. It opens the page in a tab of one long-running headless Chrome, through [Puppeteer](https://pptr.dev), in a 1440 × 900 window at 2×, and returns a JPEG. It refuses local and private network addresses, and limits how many captures a visitor can make.
 
 The card is rendered at the full size of the chosen format and scaled down to fit the preview, so the download matches the preview exactly. [html-to-image](https://github.com/bubkoo/html-to-image) turns it into a PNG in your browser.
 
@@ -129,7 +129,7 @@ Contributions are welcome. Fork the repository, create a branch, and open a pull
 - [Next.js 16](https://nextjs.org) and React 19
 - [Tailwind CSS 4](https://tailwindcss.com)
 - [html-to-image](https://github.com/bubkoo/html-to-image) for the PNG export
-- [capture-website](https://github.com/sindresorhus/capture-website) for website captures
+- [Puppeteer](https://pptr.dev) and Express for website captures
 - [Inter](https://rsms.me/inter/) and [Geist Mono](https://vercel.com/font)
 - [Lucide](https://lucide.dev) icons
 

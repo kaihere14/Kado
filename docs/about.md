@@ -161,7 +161,7 @@ youtube: {
 
 ### 9. Capture websites on a separate server, called from the browser
 
-**Decision:** The Website tab calls `GET /api/capture?url=…` on the capture server, an Express app in `capture-server/` hosted on Render. It runs [capture-website](https://github.com/sindresorhus/capture-website) (Puppeteer and headless Chrome) and returns a JPEG. The address comes from `NEXT_PUBLIC_CAPTURE_URL`, and the browser fetches from it directly.
+**Decision:** The Website tab calls `GET /api/capture?url=…` on the capture server, an Express app in `capture-server/` hosted on Render. It opens the page in a tab of one long-running headless Chrome through [Puppeteer](https://pptr.dev) and returns a JPEG. It waits for the page's HTML, then at most 8 more seconds for the network to go quiet, because pages with live widgets or analytics never do. The address comes from `NEXT_PUBLIC_CAPTURE_URL`, and the browser fetches from it directly.
 
 **Why:** A screenshot needs a real browser. Vercel functions can't run Puppeteer's Chrome as it ships, and the Linux build made for them (`@sparticuz/chromium`) would use up the function quota quickly, since every capture needs 1–2 GB for several seconds. Calling Render from the browser keeps captures off Vercel entirely. See [what we tried and dropped](#what-we-tried-and-dropped).
 
@@ -581,8 +581,9 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 | Switching to another library | modern-screenshot and snapdom use the same SVG technique, so the same WebKit engine draws the result, with the same quirks. |
 | Rendering on the server with `next/og` | Consistent on every device, but every card would need rewriting, and it doesn't support `mask` or `backdrop-filter`. |
 | A paid screenshot API (site-shot) | Works, but costs money per capture. |
-| capture-website in a Next.js route on Vercel | Works locally, but Puppeteer downloads Chrome outside the project, so it isn't deployed with the function, and a full Chrome doesn't run on Vercel anyway. |
+| Capturing in a Next.js route on Vercel | Works locally, but Puppeteer downloads Chrome outside the project, so it isn't deployed with the function, and a full Chrome doesn't run on Vercel anyway. |
 | `@sparticuz/chromium` on Vercel | The usual fix for the above, but every capture needs 1–2 GB of memory for several seconds, which would use up the Vercel quota fast. |
+| [capture-website](https://github.com/sindresorhus/capture-website) on the capture server | It launches a new Chrome for every capture and waits for the network to go quiet. On a small Render instance, starting Chrome took about 12 seconds, and pages with live widgets never went quiet, so captures timed out after 25 seconds. |
 | Microlink's free screenshot API from the browser | Free and quick, but limited to 25 captures a day per visitor and adds a third party. |
 | LinkedIn profiles | LinkedIn blocks profile access, so every LinkedIn card had to be filled in by hand. The Image and Website tabs cover the same need. |
 
