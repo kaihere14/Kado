@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { Fragment } from "react";
+import { hexToOklch } from "@/lib/color";
 import { formatCount, type PlatformId, type Profile } from "@/lib/platforms";
 import { PLATFORM_ICONS, VerifiedBadge } from "./brand-icons";
 
@@ -10,7 +11,18 @@ export type CardShape = "square" | "rectangle";
 export const FRAME_STYLES = ["none", "glass", "solid", "line"] as const;
 export type FrameStyle = (typeof FRAME_STYLES)[number];
 
-/** How the card sits on the background: its frame, shadow and tilt. Kept when a new profile loads. */
+export const CORNER_STYLES = ["sharp", "curved", "round"] as const;
+export type CornerStyle = (typeof CORNER_STYLES)[number];
+
+// Each card style's own radius is "curved"; the others scale it, so a style keeps its character.
+const CORNER_SCALE: Record<CornerStyle, number> = { sharp: 0, curved: 1, round: 2 };
+
+/** A style's design radius under the picked corners. */
+export function cornerRadius(radius: number, corners: CornerStyle) {
+  return radius * CORNER_SCALE[corners];
+}
+
+/** How the card sits on the background: its place, frame, shadow and tilt. Kept when a new profile loads. */
 export interface CardEffects {
   frame: FrameStyle;
   /** Gap between card and frame edge, in px of the 360px design. */
@@ -21,9 +33,26 @@ export interface CardEffects {
   rotate: number;
   tiltX: number;
   tiltY: number;
+  corners: CornerStyle;
+  /** The frame's colour as `#rrggbb`, or "" for one that suits the card and background. */
+  frameColor: string;
+  /** Where the card's centre sits, as a share of the frame's width and height from its centre: −0.5 to 0.5. */
+  x: number;
+  y: number;
 }
 
-export const DEFAULT_EFFECTS: CardEffects = { frame: "none", frameWidth: 12, shadow: 50, rotate: 0, tiltX: 0, tiltY: 0 };
+export const DEFAULT_EFFECTS: CardEffects = {
+  frame: "none",
+  frameWidth: 12,
+  shadow: 50,
+  rotate: 0,
+  tiltX: 0,
+  tiltY: 0,
+  corners: "curved",
+  frameColor: "",
+  x: 0,
+  y: 0,
+};
 
 export interface CardOptions {
   style: CardStyle;
@@ -70,6 +99,8 @@ interface CardProps {
   width: number;
   /** Drop-shadow strength, 0–100. */
   shadow: number;
+  /** Corner radius in CSS px. */
+  radius: number;
 }
 
 /** Corner radius of each style at the 360px design width. A frame adds its gap to stay concentric. */
@@ -86,7 +117,18 @@ export function dropShadow(strength: number, { y, blur, spread, rgb, alpha }: { 
 
 export const LIFT = { y: 18, blur: 40, spread: -18, rgb: "22,22,63", alpha: 0.45 };
 
-function frameLook(frame: Exclude<FrameStyle, "none">, darkCard: boolean, darkBackdrop: boolean) {
+function frameLook(frame: Exclude<FrameStyle, "none">, color: string, darkCard: boolean, darkBackdrop: boolean) {
+  if (color) {
+    switch (frame) {
+      case "solid":
+        return { background: color, line: hexToOklch(color).l < 0.6 ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.05)" };
+      case "glass":
+        // The same frosted fade as the automatic glass, tinted. Alpha suffixes: 99 = .6, 4d = .3, cc = .8.
+        return { background: `linear-gradient(180deg, ${color}99, ${color}4d)`, line: `${color}cc` };
+      case "line":
+        return { background: undefined, line: color };
+    }
+  }
   switch (frame) {
     case "solid":
       // A mat a shade off the card's own surface, so the card's edge still reads against it.
@@ -134,13 +176,13 @@ export function CardMount({
   radius: number;
   children: React.ReactNode;
 }) {
-  const { frame, frameWidth, shadow, rotate, tiltX, tiltY } = effects;
+  const { frame, frameWidth, frameColor, shadow, rotate, tiltX, tiltY } = effects;
   let card = children;
 
   if (frame !== "none") {
     const gap = frameWidth * scale;
     const border = frame === "line" ? 1.5 * scale : 1;
-    const look = frameLook(frame, dark, darkBackdrop);
+    const look = frameLook(frame, frameColor, dark, darkBackdrop);
     card = (
       <div
         data-card-shadow
@@ -179,9 +221,10 @@ export function ProfileCard({
   effects = DEFAULT_EFFECTS,
   darkBackdrop = true,
   ...props
-}: Omit<CardProps, "shadow"> & { effects?: CardEffects; darkBackdrop?: boolean }) {
+}: Omit<CardProps, "shadow" | "radius"> & { effects?: CardEffects; darkBackdrop?: boolean }) {
   const scale = props.width / 360;
-  const cardProps = { ...props, shadow: cardShadow(effects) };
+  const radius = cornerRadius(RADIUS[props.options.style], effects.corners) * scale;
+  const cardProps = { ...props, shadow: cardShadow(effects), radius };
 
   let card: React.ReactNode;
   switch (props.options.style) {
@@ -214,7 +257,7 @@ export function ProfileCard({
       dark={props.options.theme === "dark"}
       width={props.width}
       scale={scale}
-      radius={RADIUS[props.options.style] * scale}
+      radius={radius}
     >
       {card}
     </CardMount>
@@ -293,7 +336,7 @@ function NativeCard(props: CardProps) {
         width,
         // A cap, not a fixed height: profiles without a bio or banner would leave an empty block.
         maxHeight: rectangular ? width * 0.74 : undefined,
-        borderRadius: RADIUS.native * scale,
+        borderRadius: props.radius,
         fontSize: 14 * scale,
         background: surface,
         boxShadow: ["0 1px 0 rgba(0,0,0,.06)", props.shadow && dropShadow(props.shadow, LIFT)]
@@ -428,7 +471,7 @@ function MinimalCard(props: CardProps) {
         maxHeight: rectangular ? width * 0.74 : undefined,
         padding: rectangular ? `${22 * scale}px ${24 * scale}px ${18 * scale}px` : `${28 * scale}px ${24 * scale}px ${22 * scale}px`,
         fontSize: 14 * scale,
-        borderRadius: RADIUS.minimal * scale,
+        borderRadius: props.radius,
         background: dark ? "rgba(30,30,28,0.86)" : "rgba(255,255,255,0.86)",
         boxShadow: (dark
           ? ["inset 0 0 0 1px rgba(255,255,255,.08)", props.shadow && dropShadow(props.shadow, { y: 20, blur: 50, spread: -20, rgb: "0,0,0", alpha: 0.6 })]
@@ -506,7 +549,7 @@ function TicketCard(props: CardProps) {
         width,
         minHeight: width * 0.48,
         fontSize: 13 * scale,
-        borderRadius: RADIUS.ticket * scale,
+        borderRadius: props.radius,
         background: dark ? "#2a2a27" : "#ffffff",
         mask,
         WebkitMask: mask,

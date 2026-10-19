@@ -23,7 +23,7 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome" />
 </p>
 
-kado turns a screenshot, a website or a social profile into a clean, share-ready image. Drop or paste an image, paste a link for kado to capture, or type an X, GitHub, YouTube or Instagram handle. Pick a preset, or tune the background, frame, shadow and tilt yourself, and kado sizes it for the feed you're posting to. Download it as a PNG or copy it straight to the clipboard.
+kado turns a screenshot, a website or a social profile into a clean, share-ready image. Drop or paste an image, paste a link for kado to capture, or type an X, GitHub, YouTube or Instagram handle. Pick a preset, or tune the background, corners, frame, shadow and tilt yourself, drag the card where you want it, and kado sizes it for the feed you're posting to. Download it as a PNG or copy it straight to the clipboard.
 
 <p align="center">
   <img src="docs/studio.png" alt="The kado studio: a captured website in the Onyx preset, with the Canvas, Card and Presets tabs" width="100%" />
@@ -85,7 +85,7 @@ To build for production, run `pnpm build` and then `pnpm start`. kado runs on an
 ## Usage
 
 1. Pick **Image**, **Website** or **Profile**. Drop, paste or open an image; paste a link; or choose a platform from the menu and type a handle. Full profile URLs and a leading `@` work too.
-2. Under **Presets**, pick a finished look. Or set the **format** and **background** under **Canvas**, and the style, size, frame, shadow and tilt under **Card**.
+2. Under **Presets**, pick a finished look. Or set the **format** and **background** under **Canvas**, and the style, corners, size, frame and its colour, shadow and tilt under **Card**. Drag the card in the preview to move it; it snaps to the centre lines. The green light in the studio's title bar opens it full screen.
 3. For a profile, the bottom of **Card** has **Show**, to choose which numbers appear and whether to include the verified badge, banner and platform logo, and **Edit details**, to change anything the platform returned or upload your own photo and banner.
 4. **Download** saves a PNG. **Copy** puts the image on your clipboard, ready to paste into a post.
 

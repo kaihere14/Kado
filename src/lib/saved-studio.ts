@@ -1,5 +1,12 @@
 import { IMAGE_STYLES, type ImageStyle } from "@/components/image-card";
-import { DEFAULT_EFFECTS, DEFAULT_SIZE, FRAME_STYLES, type CardEffects, type CardOptions } from "@/components/profile-card";
+import {
+  CORNER_STYLES,
+  DEFAULT_EFFECTS,
+  DEFAULT_SIZE,
+  FRAME_STYLES,
+  type CardEffects,
+  type CardOptions,
+} from "@/components/profile-card";
 import {
   BACKDROPS,
   DEFAULT_BACKDROP,
@@ -86,6 +93,8 @@ export function loadStudio(): RestoredStudio | null {
         : (BACKDROPS.find((b) => b.id === (saved.backdrop as Backdrop | undefined)?.id) ?? DEFAULT_BACKDROP);
     const effects = withDefaults(DEFAULT_EFFECTS, saved.effects);
     if (!FRAME_STYLES.includes(effects.frame)) effects.frame = DEFAULT_EFFECTS.frame;
+    if (!CORNER_STYLES.includes(effects.corners)) effects.corners = DEFAULT_EFFECTS.corners;
+    if (effects.frameColor && !/^#[0-9a-f]{6}$/i.test(effects.frameColor)) effects.frameColor = DEFAULT_EFFECTS.frameColor;
     const options = { ...saved.options } as CardOptions;
     if (typeof options.size !== "number") options.size = LEGACY_SIZES[String(options.size)] ?? DEFAULT_SIZE;
     return {

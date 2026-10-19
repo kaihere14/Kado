@@ -39,14 +39,17 @@ import { loadStudio, saveStudio } from "@/lib/saved-studio";
 import { drawProjected, projection } from "@/lib/warp";
 import {
   cardWidth,
+  CORNER_STYLES,
   DEFAULT_EFFECTS,
   DEFAULT_SIZE,
+  dropShadow,
   FRAME_STYLES,
   ProfileCard,
   type CardEffects,
   type CardOptions,
   type CardShape,
   type CardStyle,
+  type CornerStyle,
 } from "./profile-card";
 
 // Shown before anyone generates a card, so the studio is never empty.
@@ -69,6 +72,32 @@ const STYLES: { id: CardStyle; label: string }[] = [
 ];
 
 const IMAGE_STYLE_LABELS: Record<ImageStyle, string> = { card: "Card", window: "Window", plain: "Plain" };
+
+const CORNER_LABELS: Record<CornerStyle, string> = { sharp: "Sharp", curved: "Curved", round: "Round" };
+// The corner radius each tile's miniature card is drawn with, in px.
+const CORNER_PREVIEW: Record<CornerStyle, number> = { sharp: 0, curved: 8, round: 18 };
+
+// Frame colours to pick from; "" leaves the frame matched to the card and background.
+const FRAME_COLORS = [
+  { value: "", label: "Automatic" },
+  { value: "#ffffff", label: "White" },
+  { value: "#18181b", label: "Black" },
+  { value: "#7c5cff", label: "Violet" },
+  { value: "#f5a524", label: "Amber" },
+];
+
+// Dragged within this many screen px of a centre line, the card snaps onto it.
+const SNAP = 8;
+
+// Quick picks for the shadow slider. 50 is each card's original shadow.
+const SHADOW_STEPS = [
+  { value: 0, label: "None" },
+  { value: 50, label: "Soft" },
+  { value: 90, label: "Strong" },
+];
+// The LIFT shadow drawn at tile size.
+const TILE_LIFT = { y: 6, blur: 14, spread: -3, rgb: "22,22,63", alpha: 0.3 };
+const TILE_EDGE = "0 0 0 1px rgba(42,42,39,.06)";
 
 // Image comes first: it works for anyone, with or without a profile on the platforms.
 const SOURCE_TABS: Record<Source, { label: string; Icon: typeof Globe }> = {
@@ -208,6 +237,11 @@ export function Studio() {
   const [image, setImage] = useState<CardImage | null>(null);
   const [imageStyle, setImageStyle] = useState<ImageStyle>(IMAGE_STYLES[0]);
   const [dragging, setDragging] = useState(false);
+  // While the card is being moved: which centre lines it has snapped to.
+  const [snapped, setSnapped] = useState<{ x: boolean; y: boolean } | null>(null);
+  const moveRef = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
+  // The studio window grown to cover the viewport, from the green light.
+  const [fullscreen, setFullscreen] = useState(false);
   const [tab, setTab] = useState<InspectorTab>("canvas");
   const [generation, setGeneration] = useState(0);
   const [options, setOptions] = useState<CardOptions>(() => defaultOptions("x"));
@@ -269,6 +303,21 @@ export function Studio() {
   const previewScale = previewBox.width
     ? Math.min(previewBox.width / format.width, previewBox.height / format.height)
     : 0;
+
+  // While the window covers the viewport, the page behind it stays put and Escape steps back out.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const root = document.documentElement;
+    root.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      root.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen]);
 
   // The frame renders at its real export size; scale it down to fit the preview column.
   useEffect(() => {
@@ -502,9 +551,16 @@ export function Studio() {
     if (hidden > 0) window.scrollBy({ top: -hidden });
   }
 
-  /** Takes on a preset's whole look. The format and what's on the card stay as they are. */
-  function applyPreset(preset: Preset) {
+  /** A preset's look with the card's place, corners and frame colour left as picked, since no preset sets them. */
+  function lookOf(preset: Preset) {
     const look = presetLook(preset, !!image);
+    const { corners, frameColor, x, y } = effects;
+    return { ...look, effects: { ...look.effects, corners, frameColor, x, y } };
+  }
+
+  /** Takes on a preset's whole look. The format, the card's place, corners and frame colour, and what's on it stay as they are. */
+  function applyPreset(preset: Preset) {
+    const look = lookOf(preset);
     setBackdrop(look.backdrop);
     setTune(look.tune);
     setEffects(look.effects);
@@ -514,7 +570,7 @@ export function Studio() {
 
   /** Whether the studio shows a preset untouched, so its tile can read as picked. */
   function isPresetActive(preset: Preset) {
-    const look = presetLook(preset, !!image);
+    const look = lookOf(preset);
     return (
       "id" in backdrop &&
       backdrop.id === preset.backdrop &&
@@ -528,7 +584,7 @@ export function Studio() {
 
   /** The card with these settings, sized for the current format: the preview's, or a preset's miniature. */
   function renderCard(look: { options: CardOptions; imageStyle: ImageStyle; effects: CardEffects; darkBackdrop: boolean }) {
-    return image ? (
+    const card = image ? (
       <ImageCard
         image={image}
         style={look.imageStyle}
@@ -546,6 +602,12 @@ export function Studio() {
         darkBackdrop={look.darkBackdrop}
       />
     );
+    // Moved off centre with layout offsets, not a transform: the tilted export's projection only sees offsets.
+    return (
+      <div className="relative" style={{ left: look.effects.x * format.width, top: look.effects.y * format.height }}>
+        {card}
+      </div>
+    );
   }
 
   function updateTune(patch: Partial<BackdropTune>) {
@@ -554,6 +616,33 @@ export function Studio() {
 
   function updateEffects(patch: Partial<CardEffects>) {
     setEffects((e) => ({ ...e, ...patch }));
+  }
+
+  function startMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    moveRef.current = { pointerX: event.clientX, pointerY: event.clientY, x: effects.x, y: effects.y };
+    setSnapped({ x: effects.x === 0, y: effects.y === 0 });
+  }
+
+  /** Follows the pointer, keeping the card's centre inside the frame and snapping it onto a centre line near one. */
+  function move(event: React.PointerEvent<HTMLDivElement>) {
+    const start = moveRef.current;
+    if (!start || !previewScale) return;
+    const width = format.width * previewScale;
+    const height = format.height * previewScale;
+    const clamp = (v: number) => Math.min(0.5, Math.max(-0.5, v));
+    const x = clamp(start.x + (event.clientX - start.pointerX) / width);
+    const y = clamp(start.y + (event.clientY - start.pointerY) / height);
+    const onX = Math.abs(x * width) < SNAP;
+    const onY = Math.abs(y * height) < SNAP;
+    updateEffects({ x: onX ? 0 : x, y: onY ? 0 : y });
+    setSnapped({ x: onX, y: onY });
+  }
+
+  function endMove() {
+    moveRef.current = null;
+    setSnapped(null);
   }
 
   function updateProfile(patch: Partial<Profile>) {
@@ -796,12 +885,20 @@ export function Studio() {
                 "radial-gradient(ellipse 70% 80% at 0% 0%, #e6dcff 0%, transparent 60%), radial-gradient(ellipse 70% 80% at 100% 100%, #fbd9e8 0%, transparent 60%), #efebf7",
             }}
           >
-            <div className="overflow-clip rounded-2xl border border-transparent bg-white shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]">
-              <div className="flex items-center gap-3 border-b border-black/[.06] px-4 py-3">
-                <div className="flex gap-1.5" aria-hidden>
-                  <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-                  <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
-                  <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+            <div
+              className={clsx(
+                "border border-transparent bg-white",
+                // Full screen scrolls inside itself below lg, so the preview can still stick above the inspector.
+                fullscreen
+                  ? "fixed inset-0 z-50 flex flex-col overflow-y-auto lg:overflow-hidden"
+                  : "overflow-clip rounded-2xl shadow-[0_1px_2px_rgba(42,42,39,.06),0_30px_60px_-30px_rgba(60,40,120,.35)] ring-1 ring-black/[.05]",
+              )}
+            >
+              <div className="flex shrink-0 items-center gap-3 border-b border-black/[.06] px-4 py-3">
+                <div className="flex gap-1.5">
+                  <span aria-hidden className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+                  <span aria-hidden className="h-3 w-3 rounded-full bg-[#febc2e]" />
+                  <FullscreenLight on={fullscreen} onClick={() => setFullscreen((on) => !on)} />
                 </div>
                 <span className="flex-1 truncate text-center font-mono text-xs text-muted">
                   {fileName} · {format.width * EXPORT_SCALE}×{format.height * EXPORT_SCALE}
@@ -822,8 +919,22 @@ export function Studio() {
 
               {/* Fixed-height body on desktop: the inspector scrolls on its own instead of stretching the window.
                   Stacked below lg, where the preview sticks to the top so every tweak stays in view. */}
-              <div className="flex flex-col lg:grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
-                <div className="preview-surface sticky top-0 z-20 flex h-[250px] border-b border-black/[.06] p-4 sm:h-[400px] sm:p-6 lg:relative lg:h-full lg:border-b-0 lg:p-8">
+              {/* minmax(0, 1fr): a plain 1fr can't shrink below the preview frame's set width, so leaving full screen
+                  would keep the big frame and push the inspector out of the window. */}
+              <div
+                className={clsx(
+                  "flex flex-col lg:grid",
+                  fullscreen
+                    ? "lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_360px]"
+                    : "lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[minmax(0,1fr)_320px]",
+                )}
+              >
+                <div
+                  className={clsx(
+                    "preview-surface sticky top-0 z-20 flex shrink-0 border-b border-black/[.06] p-4 sm:p-6 lg:relative lg:h-full lg:border-b-0",
+                    fullscreen ? "h-[45svh] sm:h-[55svh] lg:p-12" : "h-[250px] sm:h-[400px] lg:p-8",
+                  )}
+                >
                   <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     {/* Outlined like an image: an inset hairline that never changes the frame's size. */}
                     <div
@@ -840,11 +951,46 @@ export function Studio() {
                       >
                         <Scene ref={canvasRef} format={format} backdrop={tuned}>
                           {/* Only freshly generated cards settle in; the sample shows without a second entrance. */}
-                          <div key={generation} className={clsx("relative", generation > 0 && "card-in")}>
+                          {/* Drag to move the card; a double-click puts it back in the middle. */}
+                          <div
+                            key={generation}
+                            title="Drag to move, double-click to centre"
+                            onPointerDown={startMove}
+                            onPointerMove={move}
+                            onPointerUp={endMove}
+                            onPointerCancel={endMove}
+                            onDoubleClick={() => updateEffects({ x: 0, y: 0 })}
+                            // A dragged image would start the browser's own drag, and the page reads that as a file drop.
+                            onDragStart={(e) => e.preventDefault()}
+                            className={clsx(
+                              "relative touch-none select-none",
+                              snapped ? "cursor-grabbing" : "cursor-grab",
+                              generation > 0 && "card-in",
+                            )}
+                          >
                             {renderCard({ options, imageStyle, effects, darkBackdrop: isDarkBackdrop(backdrop) })}
                           </div>
                         </Scene>
                       </div>
+
+                      {/* Centre lines while the card moves, drawn over the preview so they never reach the export.
+                          The one the card has snapped to shows solid. */}
+                      {snapped && (
+                        <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-difference">
+                          <span
+                            className={clsx(
+                              "absolute inset-y-0 left-1/2 border-l border-dashed border-white transition-opacity duration-150",
+                              snapped.x ? "opacity-90" : "opacity-35",
+                            )}
+                          />
+                          <span
+                            className={clsx(
+                              "absolute inset-x-0 top-1/2 border-t border-dashed border-white transition-opacity duration-150",
+                              snapped.y ? "opacity-90" : "opacity-35",
+                            )}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -878,7 +1024,7 @@ export function Studio() {
                         <p className="text-muted">Pick a look, then fine-tune it under Card and Canvas.</p>
                         <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-2">
                           {PRESETS.map((preset) => {
-                            const look = presetLook(preset, !!image);
+                            const look = lookOf(preset);
                             return (
                               <PresetTile
                                 key={preset.id}
@@ -905,23 +1051,77 @@ export function Studio() {
                     {tab === "card" && (
                       <>
                         <InspectorSection title="Style">
-                          {image ? (
-                            <Segmented value={imageStyle} values={IMAGE_STYLES} labels={IMAGE_STYLE_LABELS} onChange={setImageStyle} />
-                          ) : (
-                            <Segmented
-                              value={options.style}
-                              values={STYLES.map((s) => s.id)}
-                              labels={Object.fromEntries(STYLES.map((s) => [s.id, s.label]))}
-                              onChange={(style) => setOptions((o) => ({ ...o, style }))}
-                            />
-                          )}
+                          {/* Each tile draws the real card in that style, with the corners picked below. */}
+                          <div className="grid grid-cols-3 gap-3">
+                            {image
+                              ? IMAGE_STYLES.map((style) => (
+                                  <OptionTile
+                                    key={style}
+                                    label={IMAGE_STYLE_LABELS[style]}
+                                    selected={imageStyle === style}
+                                    onClick={() => setImageStyle(style)}
+                                  >
+                                    <Fit>
+                                      <ImageCard
+                                        image={image}
+                                        style={style}
+                                        theme={options.theme}
+                                        width={480}
+                                        effects={{ ...DEFAULT_EFFECTS, corners: effects.corners }}
+                                      />
+                                    </Fit>
+                                  </OptionTile>
+                                ))
+                              : STYLES.map(({ id, label }) => (
+                                  <OptionTile
+                                    key={id}
+                                    label={label}
+                                    selected={options.style === id}
+                                    onClick={() => setOptions((o) => ({ ...o, style: id }))}
+                                  >
+                                    <Fit>
+                                      <ProfileCard
+                                        profile={profile}
+                                        options={{ ...options, style: id }}
+                                        width={360}
+                                        effects={{ ...DEFAULT_EFFECTS, corners: effects.corners }}
+                                      />
+                                    </Fit>
+                                  </OptionTile>
+                                ))}
+                          </div>
+                        </InspectorSection>
+
+                        <InspectorSection title="Corners">
+                          <div className="grid grid-cols-3 gap-3">
+                            {CORNER_STYLES.map((corners) => (
+                              <OptionTile
+                                key={corners}
+                                label={CORNER_LABELS[corners]}
+                                selected={effects.corners === corners}
+                                onClick={() => updateEffects({ corners })}
+                              >
+                                {/* The corner of a card tucked into the tile, rounded the way this option rounds it. */}
+                                <span
+                                  className="absolute top-[28%] right-0 bottom-0 left-[28%] bg-white shadow-[0_0_0_1px_rgba(42,42,39,.06),0_1px_3px_rgba(42,42,39,.12)]"
+                                  style={{ borderTopLeftRadius: CORNER_PREVIEW[corners] }}
+                                />
+                              </OptionTile>
+                            ))}
+                          </div>
                         </InspectorSection>
 
                         <InspectorSection
                           title="Layout"
                           action={
-                            options.size !== DEFAULT_SIZE && (
-                              <ResetButton label="card size" onClick={() => setOptions((o) => ({ ...o, size: DEFAULT_SIZE }))} />
+                            (options.size !== DEFAULT_SIZE || effects.x !== 0 || effects.y !== 0) && (
+                              <ResetButton
+                                label="card size and position"
+                                onClick={() => {
+                                  setOptions((o) => ({ ...o, size: DEFAULT_SIZE }));
+                                  updateEffects({ x: 0, y: 0 });
+                                }}
+                              />
                             )
                           }
                         >
@@ -958,6 +1158,13 @@ export function Studio() {
                             labels={{ none: "None", glass: "Glass", solid: "Solid", line: "Line" }}
                             onChange={(frame) => updateEffects({ frame })}
                           />
+                          <ColorPicker
+                            label="Color"
+                            value={effects.frameColor}
+                            colors={FRAME_COLORS}
+                            disabled={effects.frame === "none"}
+                            onChange={(frameColor) => updateEffects({ frameColor })}
+                          />
                           <Slider
                             label="Width"
                             value={effects.frameWidth}
@@ -982,6 +1189,21 @@ export function Studio() {
                             )
                           }
                         >
+                          <div className="grid grid-cols-3 gap-3">
+                            {SHADOW_STEPS.map(({ value, label }) => (
+                              <OptionTile
+                                key={value}
+                                label={label}
+                                selected={effects.shadow === value}
+                                onClick={() => updateEffects({ shadow: value })}
+                              >
+                                <span
+                                  className="absolute inset-[26%] rounded-md bg-white"
+                                  style={{ boxShadow: [TILE_EDGE, value && dropShadow(value, TILE_LIFT)].filter(Boolean).join(", ") }}
+                                />
+                              </OptionTile>
+                            ))}
+                          </div>
                           <div className="flex flex-col">
                             <Slider
                               label="Shadow"
@@ -1454,6 +1676,68 @@ function PresetTile({
   );
 }
 
+/** A choice drawn as a miniature in a square tile, with its label below. */
+function OptionTile({
+  label,
+  selected,
+  onClick,
+  children,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      className="press group flex flex-col items-center gap-1.5 transition-[scale]"
+    >
+      <span
+        aria-hidden
+        className={clsx(
+          "pointer-events-none relative block aspect-square w-full overflow-hidden rounded-lg bg-well ring-offset-2 transition-[box-shadow]",
+          selected ? "ring-2 ring-ink" : "ring-1 ring-black/10 group-hover:ring-black/25",
+        )}
+      >
+        {children}
+      </span>
+      <span className={clsx("text-xs", selected ? "font-medium text-ink" : "text-muted")}>{label}</span>
+    </button>
+  );
+}
+
+/** Scales a full-size card down to sit in the middle of its tile, whatever its proportions. */
+function Fit({ children }: { children: React.ReactNode }) {
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const cardRef = useRef<HTMLSpanElement>(null);
+  const [scale, setScale] = useState(0);
+
+  useEffect(() => {
+    const box = boxRef.current;
+    const card = cardRef.current;
+    if (!box || !card) return;
+    // offsetWidth ignores the transform, so this always measures the card at full size.
+    const fit = () =>
+      setScale(Math.min((box.clientWidth * 0.78) / card.offsetWidth, (box.clientHeight * 0.78) / card.offsetHeight));
+    const observer = new ResizeObserver(fit);
+    observer.observe(box);
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <span ref={boxRef} className="absolute inset-0 flex items-center justify-center">
+      {/* Hidden until measured, so the full-size card never flashes in the tile. */}
+      <span ref={cardRef} className={clsx("block shrink-0", !scale && "invisible")} style={{ transform: `scale(${scale})` }}>
+        {children}
+      </span>
+    </span>
+  );
+}
+
 /**
  * The platform switch at the start of the Profile pill: its icon opens a menu of the platforms we pull from.
  * Arrow keys move through the menu, Enter picks, Escape closes it.
@@ -1593,6 +1877,38 @@ function HintCursor({ label, hidden }: { label: string; hidden: boolean }) {
   );
 }
 
+/**
+ * The green light, which grows the studio window to cover the viewport and back. Its macOS glyph always shows,
+ * so it reads as a button: two arrows pointing out to full screen, or in to leave it.
+ */
+function FullscreenLight({ on, onClick }: { on: boolean; onClick: () => void }) {
+  const label = on ? "Exit full screen" : "Enter full screen";
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={on}
+      onClick={onClick}
+      // The hit area reaches past the 12px light, so it's easy to land on.
+      className="relative grid h-3 w-3 place-items-center rounded-full bg-[#28c840] before:absolute before:-inset-1.5"
+    >
+      <svg
+        aria-hidden
+        viewBox="0 0 12 12"
+        className="h-3 w-3"
+        fill="#0a5c15"
+      >
+        {on ? (
+          <path d="M5.6 5.6H2.4l3.2-3.2zM6.4 6.4h3.2L6.4 9.6z" />
+        ) : (
+          <path d="M3.1 3.1h4.4L3.1 7.5zM8.9 8.9H4.5l4.4-4.4z" />
+        )}
+      </svg>
+    </button>
+  );
+}
+
 function InspectorSection({
   title,
   action,
@@ -1675,6 +1991,70 @@ function Slider({
       />
       <span className="w-11 shrink-0 text-right font-mono text-xs text-muted tabular-nums">{format(value)}</span>
     </label>
+  );
+}
+
+/** A row of colour swatches, ending in one that opens the system picker for any other colour. */
+function ColorPicker({
+  label,
+  value,
+  colors,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  colors: { value: string; label: string }[];
+  disabled?: boolean;
+  onChange: (color: string) => void;
+}) {
+  const custom = !colors.some((c) => c.value === value);
+  const swatch = (selected: boolean) =>
+    clsx(
+      "press h-6 w-6 shrink-0 rounded-full ring-offset-2 transition-[box-shadow,scale]",
+      selected ? "ring-2 ring-ink" : "ring-1 ring-black/10 hover:ring-black/25",
+    );
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      title={disabled ? "Pick a frame first" : undefined}
+      className={clsx("flex items-center gap-3 py-1.5", disabled && "pointer-events-none opacity-40")}
+    >
+      <span className="w-[68px] shrink-0 text-muted">{label}</span>
+      <div className="flex flex-1 flex-wrap gap-2">
+        {colors.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            title={c.label}
+            aria-label={c.label}
+            aria-pressed={value === c.value}
+            disabled={disabled}
+            onClick={() => onChange(c.value)}
+            className={swatch(value === c.value)}
+            // Automatic shows as half light, half dark: it follows the card and background.
+            style={{ background: c.value || "linear-gradient(135deg, #ffffff 50%, #2a2a27 50%)" }}
+          />
+        ))}
+        <label
+          title="Custom colour"
+          className={clsx(swatch(custom), "cursor-pointer", FILE_FOCUS)}
+          style={{
+            background: custom ? value : "conic-gradient(#ff5f57, #febc2e, #28c840, #1d9bf0, #7c5cff, #ff5f57)",
+          }}
+        >
+          <input
+            type="color"
+            aria-label="Custom colour"
+            value={value || "#ffffff"}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+            className="sr-only"
+          />
+        </label>
+      </div>
+    </div>
   );
 }
 
