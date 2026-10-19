@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="banner.png" alt="A kado card for @ArmanKiyotaka on the Flare background" width="100%" />
+  <img src="banner.png" alt="kado's homepage, captured and set in a window card on the Flare background" width="100%" />
 </p>
 
 <p align="center">
@@ -17,16 +17,17 @@
 
 ## Overview
 
-kado turns a social handle into an image you can post. You type `@ArmanKiyotaka`, it fetches the public profile, lays it out as a card in the style of that platform, places the card on a background sized for the feed, and saves it as a PNG.
+kado turns a screenshot, a website or a social profile into an image you can post. You drop in a screenshot, paste a link, or type a handle such as `@ArmanKiyotaka`; kado sets the result in a card, places the card on a background sized for the feed, and saves it as a PNG.
 
-There are three moving parts:
+There are four moving parts:
 
-1. **The server** fetches profile data and proxies images. It has no database and no API keys (one optional token for GitHub).
-2. **The studio** is a single React component that holds every setting and shows a live preview.
-3. **The export** turns the preview into a PNG in the browser using [html-to-image](https://github.com/bubkoo/html-to-image).
+1. **The Next.js server** fetches profile data and proxies images. It has no database and no API keys (one optional token for GitHub).
+2. **The capture server** (`capture-server/`) is a small Express app that opens a link in headless Chrome and returns a screenshot. It runs on Render, and the browser calls it directly.
+3. **The studio** is a single React component that holds every setting and shows a live preview.
+4. **The export** turns the preview into a PNG in the browser using [html-to-image](https://github.com/bubkoo/html-to-image).
 
 <p align="center">
-  <img src="studio.png" alt="The kado studio: a card preview with style, format, background and export controls" width="100%" />
+  <img src="studio.png" alt="The kado studio: a captured website in the Onyx preset, with the Canvas, Card and Presets tabs" width="100%" />
 </p>
 
 | | |
@@ -34,24 +35,26 @@ There are three moving parts:
 | Framework | Next.js 16 (App Router), React 19, TypeScript 5 |
 | Styling | Tailwind CSS 4, with a few hand-written rules in `globals.css` |
 | Image export | html-to-image, in the browser |
-| Data | Public profile sources, fetched by Next.js route handlers |
+| Data | Public profile sources, fetched by Next.js route handlers; website captures from the capture server |
 | Storage | `localStorage` only. No accounts, no database |
-| Hosting | Vercel, with Vercel Web Analytics for page views |
+| Hosting | Vercel for the site, with Vercel Web Analytics for page views; Render for the capture server |
 
 ## Project map
 
 ```
 src/
   app/
-    page.tsx                         Landing page: header, studio, platform notes, footer
+    page.tsx                         Landing page: header, studio, source tiles, FAQ, footer
     layout.tsx                       Fonts (Inter, Geist Mono) and analytics
     globals.css                      Theme colours, easing curves, animations, export rules
     api/
       profile/[platform]/[handle]/   GET a profile as JSON
       image/                         Same-origin image proxy
   components/
-    studio.tsx                       All studio state, preview scaling, export
-    profile-card.tsx                 The three card styles: Native, Minimal, Ticket
+    studio.tsx                       All studio state, the hero, the settings tabs, preview scaling, export
+    hero-title.tsx                   The headline and its rotating subject
+    profile-card.tsx                 The three profile card styles, plus the frame and tilt shared by every card
+    image-card.tsx                   A screenshot in a Card, Window or Plain style
     brand-icons.tsx                  Platform logos and the verified badge
     reveal.tsx                       Fade-in on scroll
     kado-logo.tsx                    The logo
@@ -63,6 +66,10 @@ src/
     color.ts                         Hex <-> OKLCH, for turning a gradient's hue
     warp.ts                          Projects a flat render of a tilted card onto the export
     saved-studio.ts                  Save and restore the studio in localStorage
+    card-image.ts                    Read a dropped, pasted or captured image, scaled to what an export can use
+    presets.ts                       The finished looks on the Presets tab
+capture-server/
+  src/index.ts                       GET /api/capture?url=…: a JPEG of the top of the page
 ```
 
 ## Architecture decisions
@@ -126,7 +133,7 @@ To keep the proxy from being used to fetch arbitrary URLs, it:
 
 ### 6. One config object per platform drives the UI
 
-**Decision:** Everything that differs between platforms lives in one table, `PLATFORMS` in `platforms.ts`: the label, the URL prefix, which stats exist, which are shown by default, whether there's a banner, and whether data can be fetched automatically.
+**Decision:** Everything that differs between platforms lives in one table, `PLATFORMS` in `platforms.ts`: the label, the URL prefix, which stats exist, which are shown by default, and whether there's a banner.
 
 **Why:** Adding a platform means adding one entry and one fetcher. The studio and the cards read from the config, so they don't need to change.
 
@@ -134,7 +141,6 @@ To keep the proxy from being used to fetch arbitrary URLs, it:
 youtube: {
   label: "YouTube",
   prefix: "youtube.com/@",
-  fetchable: true,
   stats: [{ key: "subscribers", ... }, { key: "videos", ... }, { key: "views", ... }],
   defaultVisible: ["subscribers", "videos"],
   hasBanner: true,
@@ -145,7 +151,7 @@ youtube: {
 
 **Decision:** A card is designed at 360 px wide. Its real width comes from the chosen size and format, and everything inside is sized in `em` from a base font of `14px × scale`, where `scale = width / 360`.
 
-**Why:** Changing size (S, M, L) or format only changes one number. Spacing, avatar size, borders and text all follow, so the card looks the same at every size.
+**Why:** Changing the size slider or the format only changes one number. Spacing, avatar size, borders and text all follow, so the card looks the same at every size.
 
 ### 8. Handle iPhone quirks on iPhone only
 
@@ -153,9 +159,35 @@ youtube: {
 
 **Why:** These are WebKit workarounds, and they make exports slower. Applying them only where they're needed keeps desktop and Android fast. See [bugs 7 and 12](#bugs-we-found-and-fixed).
 
+### 9. Capture websites on a separate server, called from the browser
+
+**Decision:** The Website tab calls `GET /api/capture?url=…` on the capture server, an Express app in `capture-server/` hosted on Render. It runs [capture-website](https://github.com/sindresorhus/capture-website) (Puppeteer and headless Chrome) and returns a JPEG. The address comes from `NEXT_PUBLIC_CAPTURE_URL`, and the browser fetches from it directly.
+
+**Why:** A screenshot needs a real browser. Vercel functions can't run Puppeteer's Chrome as it ships, and the Linux build made for them (`@sparticuz/chromium`) would use up the function quota quickly, since every capture needs 1–2 GB for several seconds. Calling Render from the browser keeps captures off Vercel entirely. See [what we tried and dropped](#what-we-tried-and-dropped).
+
+**Trade-off:** Captures depend on a second service being up. The capture server is deliberately minimal: no rate limit and no check on the addresses it opens.
+
+### 10. Presets carry a separate look for screenshots
+
+**Decision:** Each preset in `presets.ts` sets a background, its adjustments, and the card's style, theme, size, frame, shadow and tilt. It also has an `image` look, which can override the style, theme, size and effects for image cards.
+
+**Why:** A screenshot brings its own colours. A dark padded card inside a glass frame works around a profile, but around a screenshot it reads as two bezels (see [bug 16](#bugs-we-found-and-fixed)). Most image looks use light chrome, and a frame is the only border when there is one. The Presets tab draws every tile as a live miniature of your own card, so you see the real result before picking.
+
 ## How it works, step by step
 
-### Step 1: Read the handle
+### Step 1: Pick a source
+
+The hero has three tabs:
+
+| Tab | Input | What happens |
+|---|---|---|
+| Image | Drop a file anywhere on the page, paste one outside a text field, or open one | `readCardImage` reads it in the browser. Nothing is uploaded. |
+| Website | A link, with or without `https://` | The capture server returns a 1440 × 900 screenshot at 2×, which is then read like any image. |
+| Profile | A platform, picked from the menu at the start of the pill, and a handle | The profile is fetched as described in steps 2 to 4. |
+
+Dropping or pasting an image works from any tab, and switches to Image.
+
+### Step 2: Read the handle
 
 People paste handles in many forms. `normalizeHandle` in `platforms.ts` reduces them all to the bare handle:
 
@@ -165,11 +197,10 @@ People paste handles in many forms. `normalizeHandle` in `platforms.ts` reduces 
 | `https://www.x.com/ada?s=20` | `ada` |
 | `github.com/octocat/` | `octocat` |
 | `youtube.com/@mkbhd` | `mkbhd` |
-| `linkedin.com/in/your-name` | `your-name` |
 
 It strips the protocol and `www.`, then the platform's domain, cuts everything after the first `/`, `?` or `#`, and drops a leading `@`.
 
-### Step 2: Fetch the profile
+### Step 3: Fetch the profile
 
 The studio calls `/api/profile/<platform>/<handle>`. The route handler:
 
@@ -182,7 +213,7 @@ Each fetcher in `fetchers.ts` returns the same shape:
 
 ```ts
 interface Profile {
-  platform: "x" | "github" | "linkedin" | "instagram" | "youtube";
+  platform: "x" | "github" | "instagram" | "youtube";
   handle: string;
   name: string;
   bio: string;
@@ -200,21 +231,36 @@ interface Profile {
 | GitHub | GitHub REST API | `api.github.com/users/<handle>`. An optional `GITHUB_TOKEN` raises the limit from 60 to 5,000 requests an hour. A 403 means the rate limit was hit and is reported as such. |
 | Instagram | Public profile page, then the profile embed | Instagram shows a login wall to anonymous visitors from data centres, but still serves preview tags to Meta's own link crawler. So we ask with that crawler's `User-Agent` and read `og:description`: `"1.2M Followers, 512 Following, 340 Posts"`. If that fails, we read the embed widget, whose data is JSON stored as a string inside other JSON (so it's parsed twice). |
 | YouTube | The channel's About page | The page embeds all its data in `ytInitialData`. `?hl=en` keeps the counts in English, and a `SOCS` cookie skips the cookie consent page shown in the EU. YouTube moves things around, so `findKey` searches the whole object for the field it needs instead of following a fixed path. |
-| LinkedIn | You | LinkedIn blocks profile access, so the studio gives you a blank card to fill in. |
 
 Counts written in short form are turned back into numbers by `parseCount`: `"687M"` becomes `687000000`, `"8,612"` becomes `8612`.
 
-### Step 3: Show it in the studio
+### Step 4: Show it in the studio
 
 `showProfile` in `studio.tsx` puts the profile on the card and resets the options to that platform's defaults, keeping the card style you picked. For example, a YouTube profile switches the format to "X post" (16:9) and shows subscribers and videos.
 
 If an Instagram profile can't be read (private accounts, for example), you still get a blank Instagram card to fill in, with a message explaining why.
 
-A `generation` counter goes up each time a new profile arrives. It's used as the card's React `key`, so only freshly fetched cards play the entrance animation, and as the trigger to scroll the studio into view.
+A `generation` counter goes up each time a new profile or image arrives. It's used as the card's React `key`, so only fresh cards play the entrance animation, and as the trigger to scroll the studio into view.
 
-### Step 4: Draw the card
+### Step 5: Read an image
 
-`ProfileCard` picks one of three components:
+`readCardImage` in `card-image.ts` reads the file as a `data:` URL and decodes it to learn its size, which sets the card's proportions. An image longer than 2,560 px on either side is scaled down first: a card that fills a 1280 px frame exports at 2,560 px, so more pixels never reach the PNG, and the smaller image keeps exports fast on phones. Photos stay JPEG; anything else becomes PNG, so screenshot text keeps its edges.
+
+A captured website arrives as a JPEG `Blob`, which is turned into a `File` and read the same way.
+
+### Step 6: Draw the card
+
+An image goes into `ImageCard`, in one of three styles:
+
+| Style | How it's drawn |
+|---|---|
+| Card | The image on a thin mat: 6 px of padding at a 480 px card width. The image's corners (radius 18 − 6) match the Plain style's. |
+| Window | A title bar with three dots above the image, edge to edge. |
+| Plain | The image alone, with rounded corners. |
+
+A hairline over the image keeps a white screenshot's edge from melting into a white card or background. `imageCardWidth` picks the widest card that fits its share of the frame on both sides, whatever the image's proportions: 40% of the frame at size 0, all of it at 100.
+
+A profile goes into `ProfileCard`, which picks one of three components:
 
 <table>
   <tr>
@@ -229,15 +275,9 @@ A `generation` counter goes up each time a new profile arrives. It's used as the
   </tr>
 </table>
 
-**Card width** is a share of the frame, capped by the frame's height so wide formats never overflow:
+**Card width** is a share of the frame, set by the Size slider (0–100): 30% of the frame's width at 0, rising to 70% at 100. It's capped at 1.52 × that share of the frame's height, so wide formats never overflow. 25, 50 and 75 give the cards the earlier S, M and L sizes did.
 
-| Size | Share of frame width | Share of frame height (cap) |
-|---|---|---|
-| S | 40% | 62% |
-| M | 50% | 76% |
-| L | 60% | 90% |
-
-Example: size M on an X post (1200 × 675) gives `min(1200 × 0.5, 675 × 0.76)`, which is 513 px.
+Example: the default size, 50, on an X post (1200 × 675) gives `min(1200 × 0.5, 675 × 0.5 × 1.52)`, which is 513 px.
 
 Other details:
 
@@ -246,7 +286,7 @@ Other details:
 - **Numbers** under 10,000 are written in full (`8,612`); larger ones are shortened (`18.4K`).
 - **Images** go through `proxied()`, which rewrites remote URLs to `/api/image?url=...`. Uploaded images (`data:` URLs) are left as they are.
 
-**Frame, shadow and tilt** (`CardEffects`) sit around the card rather than inside it, so they stay put when a new profile loads:
+**Frame, shadow and tilt** (`CardEffects`) sit around the card rather than inside it, so they stay put when a new profile or image loads. `CardMount` in `profile-card.tsx` draws them for both kinds of card:
 
 | Setting | How it's drawn |
 |---|---|
@@ -255,7 +295,7 @@ Other details:
 | Rotate | `rotate()`, flat on the page. |
 | Tilt X / Tilt Y | `perspective(2.5 × card width) rotateX() rotateY()` on the wrapper marked `data-card-tilt`. |
 
-### Step 5: Lay out the frame and background
+### Step 7: Lay out the frame and background
 
 The frame is a `<div>` exactly the size of the export format:
 
@@ -287,7 +327,21 @@ An uploaded background is a `data:` URL shown with `center / cover`.
 
 A slider that can't change the current background (Hue on Graphite, Blur on Black) is disabled rather than hidden, so the panel never changes height.
 
-### Step 6: Export the image
+### Step 8: Presets and the settings tabs
+
+The settings sit under three tabs, pinned above them: in their own row on desktop, and under the sticky preview on phones.
+
+| Tab | Sections |
+|---|---|
+| Canvas | Format, Background |
+| Card | Style, Layout (theme, shape, size), Frame, Shadow and tilt, then Show and Edit details for a profile, or the Image section for an image |
+| Presets | 17 finished looks |
+
+Switching tabs opens the new one at its top. Left and right arrow keys move between tabs.
+
+`applyPreset` sets the background, adjustments, effects, theme, size and style in one go; the format and what's on the card stay put. A preset's tile stays highlighted until any of those settings changes by hand. Each tile renders a `Scene`, the same full-size frame the preview uses, scaled down into the tile once its width is known, which also keeps the miniatures out of the server HTML.
+
+### Step 9: Export the image
 
 Both buttons call `exportImage` in `studio.tsx`.
 
@@ -329,14 +383,15 @@ Important details:
 - **One export at a time.** `exportingRef` is set when an export starts and cleared when it ends, whether it succeeded or failed. Taps in between are ignored.
 - The buttons show "Downloaded" or "Copied" for 1.8 seconds, then reset.
 
-### Step 7: Remember the session
+### Step 10: Remember the session
 
-`saved-studio.ts` saves the platform, input, profile, options, background, background adjustments, card effects and format under the key `kado:studio:v1`.
+`saved-studio.ts` saves the source tab, platform, input, profile, image, image style, options, background, background adjustments, card effects and format under the key `kado:studio:v1`.
 
 - It saves 300 ms after you stop editing, and again on `pagehide`, so a refresh mid-typing keeps the last keystroke.
 - It restores **after** the page has loaded in the browser, not during server rendering. The server can't read `localStorage`, and restoring earlier would make the server HTML and the browser HTML disagree (a hydration mismatch).
 - Preset backgrounds are saved by id, so if a gradient is tweaked later, old sessions get the new look.
 - If uploaded images push it past the browser's storage limit (about 5 MB), it saves again without the uploads, so at least your typed details survive.
+- Older saves still load. A save from before the Profile tab kept the tab in `platform` (for example `"github"`), and opens on Profile with that platform; a LinkedIn save opens on Image. A size saved as `S`, `M` or `L` becomes 25, 50 or 75.
 - The `v1` in the key gets bumped whenever the saved shape changes, so an old save is dropped instead of misread. New fields with a default don't need a bump: `withDefaults` fills in anything a save from before the field existed is missing.
 
 ## Bugs we found and fixed
@@ -492,6 +547,30 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 
 **Fix:** Uploads are blurred in script (`blurImage`): the image is shrunk until the blur radius is about 4 px, run through three box-blur passes that repeat the edge pixels, and shown with `cover` like any upload. The preview uses a CSS blur while the slider moves and switches to the scripted one 120 ms after it stops. As a side effect, the small blurred image also decodes in time for the first Safari export.
 
+### 14. A preset tile showed only its background
+
+**Seen:** In image mode, the Flare tile on the Presets tab showed the background with no card.
+
+**Cause:** Chrome skipped painting the Window card inside the scaled-down tile. It was the only style whose clipping box (`overflow: hidden` with a radius) wasn't positioned, and only when it had no frame or tilt to give it a layer of its own.
+
+**Fix:** The Window card's outer box is `position: relative`, like the other styles' clipping boxes.
+
+### 15. The platform menu opened behind the page
+
+**Seen:** The Profile pill's platform menu opened under the hint text, and the studio below cut it off.
+
+**Cause:** The pill's wrapper fades in on load, and an element with an animation becomes a stacking context. The menu's `z-index` only counted inside that wrapper, so later content painted over it.
+
+**Fix:** The wrapper itself is `position: relative; z-index: 30`, which lifts it, menu included, above the hint and the studio.
+
+### 16. Screenshots in some presets had two borders
+
+**Seen:** A screenshot in the Dusk preset sat in a dark padded card inside a glass frame: a black bezel and a glass rim.
+
+**Cause:** Presets applied the profile card's settings to image cards too.
+
+**Fix:** Presets have their own `image` look. Image looks keep to light chrome, and use the Plain style whenever there's a frame, so the frame is the only border. Card style's padding was also halved.
+
 ## What we tried and dropped
 
 | Idea | Why we dropped it |
@@ -501,6 +580,11 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 | Rendering once, then redrawing the same image a few times, 100 ms apart | This is how [modern-screenshot](https://github.com/qq15725/modern-screenshot) handles bug 12. It's cheaper (about 0.4 s instead of 4 extra renders) but untested on a device. Rendering 5 times matched what already worked when testing by hand. It's the next thing to try if iPhone exports feel slow. |
 | Switching to another library | modern-screenshot and snapdom use the same SVG technique, so the same WebKit engine draws the result, with the same quirks. |
 | Rendering on the server with `next/og` | Consistent on every device, but every card would need rewriting, and it doesn't support `mask` or `backdrop-filter`. |
+| A paid screenshot API (site-shot) | Works, but costs money per capture. |
+| capture-website in a Next.js route on Vercel | Works locally, but Puppeteer downloads Chrome outside the project, so it isn't deployed with the function, and a full Chrome doesn't run on Vercel anyway. |
+| `@sparticuz/chromium` on Vercel | The usual fix for the above, but every capture needs 1–2 GB of memory for several seconds, which would use up the Vercel quota fast. |
+| Microlink's free screenshot API from the browser | Free and quick, but limited to 25 captures a day per visitor and adds a third party. |
+| LinkedIn profiles | LinkedIn blocks profile access, so every LinkedIn card had to be filled in by hand. The Image and Website tabs cover the same need. |
 
 ## Known limits
 
@@ -509,7 +593,8 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 - **Copy needs https.** On a local network address it falls back to a download.
 - **Instagram** gives no bio, and the embed fallback gives no following count. You fill those in by hand.
 - **YouTube and Instagram counts are rounded**, the same way those sites show them (`21.4M`).
-- **LinkedIn** is entirely manual.
+- **Website captures need the capture server.** Without `NEXT_PUBLIC_CAPTURE_URL`, or with the server down, the Website tab shows an error. Some sites block headless browsers or servers in data centres, and pages that rely on WebGL can come out blank.
+- **The capture server is open.** It has no rate limit, and it opens whatever address it's given, including local and private network addresses on Render's side.
 - **Scraped sources can change.** The YouTube and Instagram fetchers read pages that aren't official APIs. `findKey` makes YouTube more tolerant of layout changes, but a big redesign could break either fetcher.
 
 ## Working on kado
@@ -518,6 +603,7 @@ iOS limits the total memory all canvases on a page can use, and past that new ca
 - **Test export changes on a real iPhone, over https.** Chrome on a desktop doesn't show WebKit's quirks, and copying only works on https (or `localhost`). A Vercel preview deployment works well for this.
 - To test on a phone over your local network, add your computer's IP address to `allowedDevOrigins` in `next.config.ts`. Expect Copy to download instead.
 - Set `GITHUB_TOKEN` in `.env.local` if you hit GitHub's limit of 60 requests an hour.
+- For the Website tab, run the capture server (`npm install && npm run build && npm start` in `capture-server/`) and set `NEXT_PUBLIC_CAPTURE_URL=http://localhost:10000` in `.env.local`.
 
 <p align="center">
   <sub>Back to the <a href="../README.md">README</a></sub>

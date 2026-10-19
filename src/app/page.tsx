@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Globe, ImageIcon, Plus } from "lucide-react";
 import { GitHubIcon, PLATFORM_ICONS } from "@/components/brand-icons";
 import { KadoLogo } from "@/components/kado-logo";
 import { Reveal } from "@/components/reveal";
@@ -9,11 +9,26 @@ import { GITHUB_URL, SITE_URL } from "@/lib/site";
 
 const PLATFORM_NOTES: Record<string, string> = {
   x: "Name, bio, banner and counts, pulled live from the handle.",
-  linkedin: "LinkedIn hides profile data, so you type your headline and numbers.",
   github: "Pulled from GitHub’s public API, repos included.",
   instagram: "Followers, following and posts from public profiles. Add your bio yourself.",
   youtube: "Subscribers, videos, views, banner and description, straight from the channel.",
 };
+
+const TILES = [
+  {
+    id: "image",
+    label: "Image",
+    Icon: ImageIcon,
+    note: "Drop or paste any screenshot and frame it like a card. Nothing is uploaded.",
+  },
+  {
+    id: "website",
+    label: "Website",
+    Icon: Globe,
+    note: "Paste a link and kado captures the top of the page, ready to frame.",
+  },
+  ...PLATFORM_ORDER.map((id) => ({ id, label: PLATFORMS[id].label, Icon: PLATFORM_ICONS[id], note: PLATFORM_NOTES[id] })),
+];
 
 const FAQS: { question: string; answer: string }[] = [
   {
@@ -23,7 +38,12 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "Which profiles can I turn into a card?",
     answer:
-      "X, GitHub, YouTube and Instagram profiles are pulled in automatically from the handle. LinkedIn blocks profile access, so you type your name, headline and numbers yourself.",
+      "X, GitHub, YouTube and Instagram profiles are pulled in automatically from the handle. For anything else, paste a link under Website or drop a screenshot in under Image.",
+  },
+  {
+    question: "Can I use a screenshot or a website instead of a profile?",
+    answer:
+      "Yes. Pick Image, then drop, paste or open any screenshot or picture; it stays in your browser. Or pick Website and paste a link, and kado captures the top of the page as a 1440 × 900 browser window shows it. Either one sits in a card, a window or on its own, with the same backgrounds, frames, shadow and tilt as a profile card.",
   },
   {
     question: "What sizes can I download?",
@@ -55,7 +75,7 @@ const JSON_LD = {
       name: "kado",
       url: SITE_URL,
       description:
-        "Turn an X, GitHub, YouTube, Instagram or LinkedIn profile into a polished, share-ready card image sized for your feed.",
+        "Turn any screenshot or website, or an X, GitHub, YouTube or Instagram profile, into a polished, share-ready card image sized for your feed.",
       applicationCategory: "DesignApplication",
       operatingSystem: "Any",
       browserRequirements: "Requires JavaScript",
@@ -121,26 +141,21 @@ export default function Home() {
             </p>
           </Reveal>
           <ul className="mt-12 grid gap-3 text-left sm:grid-cols-2">
-            {PLATFORM_ORDER.map((id, index) => {
-              const Icon = PLATFORM_ICONS[id];
-              return (
-                // An odd last tile spans both columns instead of sitting alone.
-                <li key={id} className="sm:odd:last:col-span-2">
-                  {/* Outer radius = tile radius (8) + padding (20). */}
-                  <Reveal delay={index * 50} className="flex h-full gap-4 rounded-[28px] bg-well/70 p-5">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white shadow-[0_1px_2px_rgba(42,42,39,.1)]">
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span>
-                      <span className="block font-medium">{PLATFORMS[id].label}</span>
-                      <span className="mt-0.5 block text-[15px] leading-snug text-pretty text-muted">
-                        {PLATFORM_NOTES[id]}
-                      </span>
-                    </span>
-                  </Reveal>
-                </li>
-              );
-            })}
+            {TILES.map(({ id, label, Icon, note }, index) => (
+              // An odd last tile spans both columns instead of sitting alone.
+              <li key={id} className="sm:odd:last:col-span-2">
+                {/* Outer radius = tile radius (8) + padding (20). */}
+                <Reveal delay={index * 50} className="flex h-full gap-4 rounded-[28px] bg-well/70 p-5">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white shadow-[0_1px_2px_rgba(42,42,39,.1)]">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span>
+                    <span className="block font-medium">{label}</span>
+                    <span className="mt-0.5 block text-[15px] leading-snug text-pretty text-muted">{note}</span>
+                  </span>
+                </Reveal>
+              </li>
+            ))}
           </ul>
         </section>
 

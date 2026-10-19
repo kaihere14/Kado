@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 });
 
 // Search results lead with the query people type; link previews lead with the pitch.
-const searchTitle = "Profile Card Generator for X, GitHub & Instagram | kado";
+const searchTitle = "Screenshot Beautifier & Profile Card Maker | kado";
 const searchDescription =
-  "Free profile card generator. Turn an X, GitHub, YouTube, Instagram or LinkedIn profile into a polished image sized for your feed. No sign-up.";
-const shareTitle = "kado — your profile, as a card worth posting";
-const shareDescription = "Turn an X, LinkedIn, GitHub, YouTube or Instagram handle into a polished share card in seconds.";
+  "Free screenshot beautifier and profile card maker. Turn any screenshot or website, or an X, GitHub, YouTube or Instagram profile, into a polished image sized for your feed. No sign-up.";
+const shareTitle = "kado — turn anything into a card worth posting";
+const shareDescription = "Turn any screenshot or website, or an X, GitHub, YouTube or Instagram handle, into a polished share card in seconds.";
 
 // The share images come from opengraph-image.jpg and twitter-image.jpg next to this file.
 export const metadata: Metadata = {

@@ -2,8 +2,8 @@
 
 import clsx from "clsx";
 import { toCanvas } from "html-to-image";
-import { Check, ChevronDown, Copy, Download, ImagePlus, Loader2, RotateCcw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { AtSign, Check, ChevronDown, Copy, Download, Globe, ImageIcon, ImagePlus, Loader2, RotateCcw } from "lucide-react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   BACKDROPS,
   backdropStyle,
@@ -23,23 +23,29 @@ import {
   normalizeHandle,
   PLATFORM_ORDER,
   PLATFORMS,
+  SOURCES,
   type PlatformId,
   type Profile,
+  type Source,
 } from "@/lib/platforms";
 import { PLATFORM_ICONS } from "./brand-icons";
+import { HeroTitle } from "./hero-title";
+import { IMAGE_STYLES, ImageCard, imageCardWidth, type ImageStyle } from "./image-card";
 import { Reveal } from "./reveal";
+import { isImageFile, readCardImage, readFile, type CardImage } from "@/lib/card-image";
 import { DEFAULT_FORMAT, EXPORT_SCALE, FORMATS, getFormat } from "@/lib/formats";
+import { PRESETS, presetLook, type Preset } from "@/lib/presets";
 import { loadStudio, saveStudio } from "@/lib/saved-studio";
 import { drawProjected, projection } from "@/lib/warp";
 import {
   cardWidth,
   DEFAULT_EFFECTS,
+  DEFAULT_SIZE,
   FRAME_STYLES,
   ProfileCard,
   type CardEffects,
   type CardOptions,
   type CardShape,
-  type CardSize,
   type CardStyle,
 } from "./profile-card";
 
@@ -62,27 +68,40 @@ const STYLES: { id: CardStyle; label: string }[] = [
   { id: "ticket", label: "Ticket" },
 ];
 
+const IMAGE_STYLE_LABELS: Record<ImageStyle, string> = { card: "Card", window: "Window", plain: "Plain" };
+
+// Image comes first: it works for anyone, with or without a profile on the platforms.
+const SOURCE_TABS: Record<Source, { label: string; Icon: typeof Globe }> = {
+  image: { label: "Image", Icon: ImageIcon },
+  website: { label: "Website", Icon: Globe },
+  profile: { label: "Profile", Icon: AtSign },
+};
+
+const NOT_AN_IMAGE = "That file isn't an image. Try a PNG, JPEG or WebP.";
+
+// The server in capture-server/ that captures websites, called straight from the browser.
+const CAPTURE_URL = process.env.NEXT_PUBLIC_CAPTURE_URL;
+
+const INSPECTOR_TABS = [
+  { id: "canvas", label: "Canvas" },
+  { id: "card", label: "Card" },
+  { id: "presets", label: "Presets" },
+] as const;
+
+type InspectorTab = (typeof INSPECTOR_TABS)[number]["id"];
+
 function defaultOptions(platform: PlatformId, style: CardStyle = "native"): CardOptions {
   const config = PLATFORMS[platform];
   return {
     style,
     shape: "square",
-    size: "M",
+    size: DEFAULT_SIZE,
     theme: "light",
     visibleStats: config.defaultVisible,
     showVerified: true,
     showBanner: config.hasBanner,
     showPlatformMark: false,
   };
-}
-
-function readFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
 }
 
 // iPadOS reports itself as a Mac; touch support gives it away.
@@ -168,12 +187,25 @@ const DEPTH_KEYS: (keyof CardEffects)[] = ["shadow", "rotate", "tiltX", "tiltY"]
 const FILE_FOCUS =
   "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus";
 
+function isTextField(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.matches("textarea, input:not([type=file], [type=checkbox], [type=range])"))
+  );
+}
+
 export function Studio() {
+  const [source, setSource] = useState<Source>("image");
   const [platform, setPlatform] = useState<PlatformId>("x");
   const [input, setInput] = useState("");
+  const [site, setSite] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile>(SAMPLE);
+  const [image, setImage] = useState<CardImage | null>(null);
+  const [imageStyle, setImageStyle] = useState<ImageStyle>(IMAGE_STYLES[0]);
+  const [dragging, setDragging] = useState(false);
+  const [tab, setTab] = useState<InspectorTab>("canvas");
   const [generation, setGeneration] = useState(0);
   const [options, setOptions] = useState<CardOptions>(() => defaultOptions("x"));
   const [backdrop, setBackdrop] = useState<BackdropChoice>(DEFAULT_BACKDROP);
@@ -187,6 +219,9 @@ export function Studio() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const studioRef = useRef<HTMLElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const handleRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const exportResetRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const downloadUrlRef = useRef<string>(undefined);
   const exportingRef = useRef(false);
@@ -198,9 +233,12 @@ export function Studio() {
     const saved = loadStudio();
     if (saved) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- a lazy initializer would mismatch the server HTML
+      setSource(saved.source);
       setPlatform(saved.platform);
       setInput(saved.input);
       setProfile(saved.profile);
+      setImage(saved.image);
+      setImageStyle(saved.imageStyle);
       setOptions({ ...defaultOptions(saved.profile.platform), ...saved.options });
       setBackdrop(saved.backdrop);
       setTune(saved.tune);
@@ -213,14 +251,15 @@ export function Studio() {
   // Saves a beat after edits settle, and on pagehide so a refresh mid-typing keeps the last keystroke.
   useEffect(() => {
     if (!restored) return;
-    const save = () => saveStudio({ platform, input, profile, options, backdrop, tune, effects, formatId });
+    const save = () =>
+      saveStudio({ source, platform, input, profile, image, imageStyle, options, backdrop, tune, effects, formatId });
     const timer = setTimeout(save, 300);
     window.addEventListener("pagehide", save);
     return () => {
       clearTimeout(timer);
       window.removeEventListener("pagehide", save);
     };
-  }, [restored, platform, input, profile, options, backdrop, tune, effects, formatId]);
+  }, [restored, source, platform, input, profile, image, imageStyle, options, backdrop, tune, effects, formatId]);
 
   const format = getFormat(formatId);
   // Fit the full-size frame inside the preview area, whichever side is tighter.
@@ -269,9 +308,32 @@ export function Studio() {
   const tunable = tunableParts(backdrop);
   // Hidden spinners stop, so nothing animates off-screen while the studio is idle.
   const spinning = exportState !== "idle";
+  const fileName = `kado-${image ? "image" : profile.handle}-${format.id}.png`;
+  // The tabs that take typed input share one pill: a platform handle, or a website address.
+  const field =
+    source === "profile"
+      ? {
+          prefix: config.prefix,
+          placeholder: config.placeholder,
+          label: `${config.label} handle`,
+          hint: `Your ${config.label} handle goes here`,
+          value: input,
+        }
+      : source === "website"
+        ? {
+            prefix: "https://",
+            placeholder: "yoursite.com",
+            label: "Website address",
+            hint: "Your website goes here",
+            value: site,
+          }
+        : null;
+  // The card's width on the frame, in CSS px; the size slider reads it back as a share of the frame.
+  const shownWidth = image ? imageCardWidth(image, imageStyle, options.size, format) : cardWidth(options.size, format);
 
   function showProfile(next: Profile) {
     setProfile(next);
+    setImage(null);
     setOptions((o) => defaultOptions(next.platform, o.style));
     setFormatId(DEFAULT_FORMAT[next.platform]);
     setGeneration((g) => g + 1);
@@ -291,25 +353,116 @@ export function Studio() {
     scrollPending.current = true;
   }
 
+  /**
+   * Puts a dropped, pasted, picked or captured image in the card, keeping the current style, background and
+   * effects. `source` is the tab it came from.
+   */
+  async function openImage(file: File, from: Source = "image") {
+    setError(null);
+    if (!isImageFile(file)) {
+      setError(NOT_AN_IMAGE);
+      return;
+    }
+    try {
+      setImage(await readCardImage(file));
+    } catch {
+      setError("That image couldn't be opened. Try a PNG, JPEG or WebP.");
+      return;
+    }
+    setSource(from);
+    setGeneration((g) => g + 1);
+    scrollToStudio();
+  }
+
+  /** Captures the top of a web page on the capture server, then treats it like any other image. */
+  async function captureSite(event: React.FormEvent) {
+    event.preventDefault();
+    const address = site.trim();
+    if (!address) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${CAPTURE_URL}/api/capture?url=${encodeURIComponent(address)}`).catch(() => {
+        throw new Error("Couldn't reach the capture server. Try again in a moment.");
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Couldn't capture that site.");
+      const blob = await res.blob();
+      await openImage(new File([blob], "website.jpg", { type: blob.type }), "website");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const onDrop = useEffectEvent((file: File) => openImage(file));
+
+  // An image dragged onto any part of the page, or pasted outside a text field, goes into the card.
+  useEffect(() => {
+    // dragenter and dragleave fire for every element crossed, so count them to know when the drag leaves the page.
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
+    function enter(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      depth++;
+      setDragging(true);
+    }
+    function over(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      // Without this the browser opens the file in place of the page.
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = "copy";
+    }
+    function leave(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) setDragging(false);
+    }
+    function drop(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const files = [...e.dataTransfer!.files];
+      const file = files.find(isImageFile);
+      if (file) onDrop(file);
+      else if (files.length) setError(NOT_AN_IMAGE);
+    }
+    function paste(e: ClipboardEvent) {
+      const file = [...(e.clipboardData?.files ?? [])].find(isImageFile);
+      // A text field keeps its normal paste whenever the clipboard holds text as well.
+      if (!file || (isTextField(e.target) && e.clipboardData?.types.includes("text/plain"))) return;
+      e.preventDefault();
+      onDrop(file);
+    }
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    window.addEventListener("paste", paste);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+      window.removeEventListener("paste", paste);
+    };
+  }, []);
+
   async function generate(event: React.FormEvent) {
     event.preventDefault();
     const handle = normalizeHandle(input);
     if (!handle) return;
     setError(null);
 
-    if (!config.fetchable) {
-      showProfile(blankProfile(platform, handle));
-      scrollToStudio();
-      return;
-    }
-
     setLoading(true);
     try {
-      const res = await fetch(`/api/profile/${platform}/${encodeURIComponent(handle)}`);
+      const res = await fetch(`/api/profile/${config.id}/${encodeURIComponent(handle)}`);
       const data = await res.json();
-      // Instagram often hides profile data; fall back to a card the user fills in.
-      if (!res.ok && platform === "instagram" && res.status !== 400) {
-        showProfile(blankProfile(platform, handle));
+      // Instagram often hides profile data; fall back to a card the user fills in under Card.
+      if (!res.ok && config.id === "instagram" && res.status !== 400) {
+        showProfile(blankProfile(config.id, handle));
+        setTab("card");
         scrollToStudio();
         setError(data.error ?? "Couldn't read that Instagram profile, so fill in the details yourself.");
         return;
@@ -328,6 +481,64 @@ export function Studio() {
   function pickBackdrop(next: BackdropChoice) {
     setBackdrop(next);
     setTune(defaultTune(next));
+  }
+
+  // Each tab opens at its top: on desktop the inspector's own scroll resets; on phones the page scrolls back
+  // until the panel starts just under the pinned tabs.
+  function selectTab(next: InspectorTab) {
+    setTab(next);
+    const panel = panelRef.current;
+    const tabs = tabsRef.current;
+    if (!panel || !tabs) return;
+    panel.scrollTop = 0;
+    const hidden = tabs.getBoundingClientRect().bottom - panel.getBoundingClientRect().top;
+    if (hidden > 0) window.scrollBy({ top: -hidden });
+  }
+
+  /** Takes on a preset's whole look. The format and what's on the card stay as they are. */
+  function applyPreset(preset: Preset) {
+    const look = presetLook(preset, !!image);
+    setBackdrop(look.backdrop);
+    setTune(look.tune);
+    setEffects(look.effects);
+    setOptions((o) => ({ ...o, style: preset.style, theme: look.theme, size: look.size }));
+    setImageStyle(preset.image.style);
+  }
+
+  /** Whether the studio shows a preset untouched, so its tile can read as picked. */
+  function isPresetActive(preset: Preset) {
+    const look = presetLook(preset, !!image);
+    return (
+      "id" in backdrop &&
+      backdrop.id === preset.backdrop &&
+      !differs(tune, look.tune) &&
+      !differs(effects, look.effects) &&
+      options.theme === look.theme &&
+      options.size === look.size &&
+      (image ? imageStyle === preset.image.style : options.style === preset.style)
+    );
+  }
+
+  /** The card with these settings, sized for the current format: the preview's, or a preset's miniature. */
+  function renderCard(look: { options: CardOptions; imageStyle: ImageStyle; effects: CardEffects; darkBackdrop: boolean }) {
+    return image ? (
+      <ImageCard
+        image={image}
+        style={look.imageStyle}
+        theme={look.options.theme}
+        width={imageCardWidth(image, look.imageStyle, look.options.size, format)}
+        effects={look.effects}
+        darkBackdrop={look.darkBackdrop}
+      />
+    ) : (
+      <ProfileCard
+        profile={profile}
+        options={look.options}
+        width={cardWidth(look.options.size, format)}
+        effects={look.effects}
+        darkBackdrop={look.darkBackdrop}
+      />
+    );
   }
 
   function updateTune(patch: Partial<BackdropTune>) {
@@ -370,7 +581,7 @@ export function Studio() {
       if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
       downloadUrlRef.current = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.download = `kado-${profile.handle}-${format.id}.png`;
+      link.download = fileName;
       link.href = downloadUrlRef.current;
       link.click();
       setExportState("saved");
@@ -408,120 +619,161 @@ export function Studio() {
     <>
       <section className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 pt-14 text-center sm:pt-20">
         {/* Above the fold, so the entrance plays on first paint, staggered 50ms per chunk. */}
-        <Reveal immediate>
-          <h1 className="text-[40px] leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-[60px]">
-            Your profile, as a card worth posting.
-          </h1>
+        {/* A size container, so the headline's type can scale to fit its longest line at any width. */}
+        <Reveal immediate className="w-full @container">
+          <HeroTitle />
         </Reveal>
         <Reveal immediate delay={50}>
-          <p className="mt-5 max-w-xl text-lg leading-relaxed tracking-[-0.015em] text-muted sm:text-xl">
-            Kado turns an X, GitHub, YouTube or Instagram handle into a <span className="marker whitespace-nowrap">share-ready card</span> in
-            seconds. No sign-up, no design tool.
+          <p className="mt-6 max-w-[560px] text-[17px] leading-relaxed tracking-[-0.01em] text-muted sm:text-lg">
+            Drop a screenshot, paste a link or pick a profile. Kado turns it into a{" "}
+            <span className="marker whitespace-nowrap">share-ready card</span>, sized for every feed.
           </p>
         </Reveal>
 
         <Reveal immediate delay={100} className="w-full max-w-md sm:w-auto sm:max-w-none">
-          {/* Equal tabs on phones so they never wrap; a single pill row from sm up. */}
-          <div
-            className="relative mt-9 grid w-full rounded-[20px] bg-well p-1 sm:w-[540px] sm:rounded-full"
-            style={{ gridTemplateColumns: `repeat(${PLATFORM_ORDER.length}, minmax(0, 1fr))` }}
-          >
+          {/* Three equal tabs, one pill row at every width. The platforms live in the Profile pill's menu. */}
+          <div className="relative mt-9 grid w-full grid-cols-3 rounded-full bg-well p-1 sm:w-[360px]">
             <span
               aria-hidden
-              className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-2xl bg-white shadow-[0_1px_2px_rgba(42,42,39,.12)] transition-transform duration-200 ease-in-out motion-reduce:transition-none sm:rounded-full"
-              style={{
-                width: `calc((100% - 8px) / ${PLATFORM_ORDER.length})`,
-                transform: `translateX(${PLATFORM_ORDER.indexOf(platform) * 100}%)`,
-              }}
+              className="pointer-events-none absolute top-1 bottom-1 left-1 w-[calc((100%-8px)/3)] rounded-full bg-white shadow-[0_1px_2px_rgba(42,42,39,.12)] transition-transform duration-200 ease-in-out motion-reduce:transition-none"
+              style={{ transform: `translateX(${SOURCES.indexOf(source) * 100}%)` }}
             />
-            {PLATFORM_ORDER.map((id) => {
-              const Icon = PLATFORM_ICONS[id];
+            {SOURCES.map((id) => {
+              const { label, Icon } = SOURCE_TABS[id];
               return (
                 <button
                   key={id}
                   type="button"
                   onClick={() => {
-                    setPlatform(id);
+                    setSource(id);
                     setError(null);
                   }}
-                  aria-pressed={platform === id}
+                  aria-pressed={source === id}
                   className={clsx(
-                    "relative z-10 flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[12px] transition-[color] sm:flex-row sm:gap-2 sm:rounded-full sm:px-3 sm:text-sm",
-                    platform === id
-                      ? "font-medium text-ink"
-                      : "text-muted hover:text-ink",
+                    "relative z-10 flex items-center justify-center gap-1.5 rounded-full px-2 py-2 text-[13px] transition-[color] sm:text-sm",
+                    source === id ? "font-medium text-ink" : "text-muted hover:text-ink",
                   )}
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" />
-                  {PLATFORMS[id].label}
+                  {label}
                 </button>
               );
             })}
           </div>
         </Reveal>
 
-        <Reveal immediate delay={150} className="w-full max-w-md">
-          {/* The transparent border keeps an edge in forced-colors mode, which drops the ring. */}
-          <form
-            onSubmit={generate}
-            className="group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full border border-transparent bg-white py-1.5 pr-1.5 pl-4 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition-[box-shadow] focus-within:ring-black/20 sm:pl-5"
-          >
-            <span className="shrink-0 text-[14px] text-muted sm:text-[15px]">{config.prefix}</span>
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={config.placeholder}
-              aria-label={`${config.label} handle`}
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              className="min-w-0 flex-1 bg-transparent text-base font-medium sm:text-[15px] outline-none focus-visible:outline-none placeholder:font-normal placeholder:text-black/25"
-            />
-            {/* The spinner cross-fades over the label instead of widening the button. */}
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              aria-busy={loading}
-              className="press grid shrink-0 place-items-center rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition-[background-color,opacity,scale] hover:bg-black disabled:opacity-35 sm:px-5"
-            >
-              <span className={clsx("[grid-area:1/1] transition-opacity", loading && "opacity-0")}>Make card</span>
-              <span aria-hidden className={clsx("[grid-area:1/1] transition-opacity", !loading && "opacity-0")}>
-                <Loader2 className={clsx("h-4 w-4", loading && "animate-spin")} strokeWidth={2} absoluteStrokeWidth />
-              </span>
-            </button>
-
-            {/* Collaborator-style cursor pointing at the input; leaves faster than it returns. */}
-            <div
-              aria-hidden
+        {/* Its entrance makes it a stacking context, so it's lifted whole to keep the platform menu above the hint and studio. */}
+        <Reveal immediate delay={150} className="relative z-30 w-full max-w-md">
+          {field ? (
+            // The transparent border keeps an edge in forced-colors mode, which drops the ring.
+            <form
+              onSubmit={source === "profile" ? generate : captureSite}
               className={clsx(
-                "pointer-events-none absolute top-[54%] left-[31%] hidden transition-opacity group-focus-within:opacity-0 group-focus-within:duration-150 sm:block",
-                input ? "opacity-0 duration-150" : "duration-300",
+                "group relative mt-3 flex w-full max-w-md items-center gap-2 rounded-full border border-transparent bg-white py-1.5 pr-1.5 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06] transition-[box-shadow] focus-within:ring-black/20",
+                source === "profile" ? "pl-1.5" : "pl-4 sm:pl-5",
               )}
             >
-              <div className="cursor-nudge flex items-start">
-                <svg viewBox="0 0 20 22" className="h-[22px] w-5 drop-shadow-[0_2px_4px_rgba(60,40,140,.35)]">
-                  <path
-                    d="M2 2 L2 18 L6.5 13.8 L9.6 20.2 L12.4 18.9 L9.4 12.6 L15.6 12.4 Z"
-                    fill="#7c5cff"
-                    stroke="#fff"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span className="mt-4 -ml-1 rounded-full rounded-tl-sm bg-[#7c5cff] px-2.5 py-1 text-xs font-medium whitespace-nowrap text-white shadow-[0_4px_12px_-4px_rgba(60,40,140,.5)]">
-                  Your {config.label} handle goes here
+              {source === "profile" && (
+                <PlatformPicker
+                  value={platform}
+                  onChange={(next) => {
+                    setPlatform(next);
+                    setError(null);
+                    handleRef.current?.focus();
+                  }}
+                />
+              )}
+              {/* Phones show just "@" before a handle, which leaves the input room beside the menu button. */}
+              <span className="shrink-0 text-[14px] text-muted sm:text-[15px]">
+                {source === "profile" ? (
+                  <>
+                    <span className="sm:hidden">@</span>
+                    <span className="hidden sm:inline">{field.prefix}</span>
+                  </>
+                ) : (
+                  field.prefix
+                )}
+              </span>
+              <input
+                ref={handleRef}
+                value={field.value}
+                onChange={(e) =>
+                  // A pasted profile link is fine as it is; a pasted website drops the https:// already shown.
+                  source === "profile" ? setInput(e.target.value) : setSite(e.target.value.replace(/^https?:\/\//i, ""))
+                }
+                placeholder={field.placeholder}
+                aria-label={field.label}
+                inputMode={source === "website" ? "url" : undefined}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-transparent text-base font-medium sm:text-[15px] outline-none focus-visible:outline-none placeholder:font-normal placeholder:text-black/25"
+              />
+              {/* The spinner cross-fades over the label instead of widening the button. */}
+              <button
+                type="submit"
+                disabled={loading || !field.value.trim()}
+                aria-busy={loading}
+                className="press grid shrink-0 place-items-center rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition-[background-color,opacity,scale] hover:bg-black disabled:opacity-35 sm:px-5"
+              >
+                <span className={clsx("[grid-area:1/1] transition-opacity", loading && "opacity-0")}>Make card</span>
+                <span aria-hidden className={clsx("[grid-area:1/1] transition-opacity", !loading && "opacity-0")}>
+                  <Loader2 className={clsx("h-4 w-4", loading && "animate-spin")} strokeWidth={2} absoluteStrokeWidth />
                 </span>
-              </div>
-            </div>
-          </form>
+              </button>
+              <HintCursor label={field.hint} hidden={!!field.value} />
+            </form>
+          ) : (
+            // Same pill as the handle form, so switching tabs never shifts the page. The whole pill opens the
+            // file picker; a drop or paste anywhere on the page works too.
+            <label
+              className={clsx(
+                "group relative mt-3 flex w-full max-w-md cursor-pointer items-center gap-2.5 rounded-full border border-transparent bg-white py-1.5 pr-1.5 pl-4 shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 transition-[box-shadow] sm:pl-5",
+                FILE_FOCUS,
+                dragging ? "ring-2 ring-focus" : "ring-black/[.06] hover:ring-black/20",
+              )}
+            >
+              <ImagePlus className="h-4 w-4 shrink-0 text-muted" strokeWidth={1.5} absoluteStrokeWidth />
+              <span className="min-w-0 flex-1 truncate text-left text-[14px] text-muted sm:text-[15px]">
+                {dragging ? (
+                  "Drop it to make a card"
+                ) : (
+                  <>
+                    <span className="sm:hidden">Screenshot or photo</span>
+                    <span className="hidden sm:inline">Drop or paste a screenshot</span>
+                  </>
+                )}
+              </span>
+              <span className="press grid shrink-0 place-items-center rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition-[background-color,scale] group-hover:bg-black sm:px-5">
+                Open image
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                aria-label="Open an image"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  // Clear the value so picking the same file again still fires.
+                  e.target.value = "";
+                  if (file) openImage(file);
+                }}
+              />
+              <HintCursor label="Your screenshot goes here" hidden={dragging} />
+            </label>
+          )}
         </Reveal>
 
         <Reveal immediate delay={200}>
           <p aria-live="polite" className={clsx("mt-5 min-h-5 text-sm", error ? "text-red-600" : "text-muted")}>
             {error ??
-              (config.fetchable
+              (source === "profile"
                 ? `We pull your public ${config.label} profile. Nothing is stored.`
-                : `${config.label} keeps profiles private, so you'll fill in the numbers yourself.`)}
+                : source === "website"
+                  ? loading
+                    ? "Capturing the page. This takes a few seconds."
+                    : "We capture the top of the page, as a 1440 × 900 browser window shows it."
+                  : "Your image stays in your browser. Nothing is uploaded.")}
           </p>
         </Reveal>
       </section>
@@ -545,7 +797,7 @@ export function Studio() {
                   <span className="h-3 w-3 rounded-full bg-[#28c840]" />
                 </div>
                 <span className="flex-1 truncate text-center font-mono text-xs text-muted">
-                  kado-{profile.handle}-{format.id}.png · {format.width * EXPORT_SCALE}×{format.height * EXPORT_SCALE}
+                  {fileName} · {format.width * EXPORT_SCALE}×{format.height * EXPORT_SCALE}
                 </span>
                 <button
                   type="button"
@@ -564,7 +816,7 @@ export function Studio() {
               {/* Fixed-height body on desktop: the inspector scrolls on its own instead of stretching the window.
                   Stacked below lg, where the preview sticks to the top so every tweak stays in view. */}
               <div className="flex flex-col lg:grid lg:h-[min(660px,calc(100svh-120px))] lg:grid-cols-[1fr_320px]">
-                <div className="preview-surface sticky top-0 z-20 flex h-[250px] border-b border-black/[.06] p-4 sm:h-[400px] sm:p-6 lg:static lg:h-full lg:border-b-0 lg:p-8">
+                <div className="preview-surface sticky top-0 z-20 flex h-[250px] border-b border-black/[.06] p-4 sm:h-[400px] sm:p-6 lg:relative lg:h-full lg:border-b-0 lg:p-8">
                   <div ref={previewRef} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     {/* Outlined like an image: an inset hairline that never changes the frame's size. */}
                     <div
@@ -579,334 +831,420 @@ export function Studio() {
                         className="absolute top-0 left-0 origin-top-left"
                         style={{ transform: `scale(${previewScale})` }}
                       >
-                        <div
-                          ref={canvasRef}
-                          className="relative isolate flex items-center justify-center overflow-hidden"
-                          style={{ width: format.width, height: format.height }}
-                        >
-                          <div aria-hidden className="absolute" style={tuned.layer} />
-                          {tuned.grain && <div aria-hidden className="absolute inset-0" style={tuned.grain} />}
+                        <Scene ref={canvasRef} format={format} backdrop={tuned}>
                           {/* Only freshly generated cards settle in; the sample shows without a second entrance. */}
                           <div key={generation} className={clsx("relative", generation > 0 && "card-in")}>
-                            <ProfileCard
-                              profile={profile}
-                              options={options}
-                              width={cardWidth(options.size, format)}
-                              effects={effects}
-                              darkBackdrop={isDarkBackdrop(backdrop)}
-                            />
+                            {renderCard({ options, imageStyle, effects, darkBackdrop: isDarkBackdrop(backdrop) })}
                           </div>
-                        </div>
+                        </Scene>
                       </div>
                     </div>
+                  </div>
+
+                  {/* While a file is dragged over the page, the preview says where it will land. */}
+                  <div
+                    aria-hidden
+                    className={clsx(
+                      "pointer-events-none absolute inset-2 flex items-center justify-center rounded-xl border-[1.5px] border-dashed border-ink/25 bg-white/70 transition-opacity duration-200 sm:inset-3",
+                      dragging ? "opacity-100" : "opacity-0",
+                    )}
+                  >
+                    <span className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-[0_1px_2px_rgba(42,42,39,.08),0_8px_24px_-12px_rgba(42,42,39,.25)] ring-1 ring-black/[.06]">
+                      <ImagePlus className="h-4 w-4 text-muted" strokeWidth={1.5} absoluteStrokeWidth />
+                      Drop it to make a card
+                    </span>
                   </div>
                 </div>
 
                 <aside className="flex min-h-0 flex-col text-sm lg:border-l lg:border-black/[.06]">
+                  <InspectorTabs ref={tabsRef} value={tab} onChange={selectTab} />
                   {/* Its own scroll box only on desktop: on phones an empty overflow box with overscroll-contain swallows page swipes. */}
-                  <div className="divide-y divide-black/[.06] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
-                    <InspectorSection title="Style">
-                      <Segmented
-                        value={options.style}
-                        values={STYLES.map((s) => s.id)}
-                        labels={Object.fromEntries(STYLES.map((s) => [s.id, s.label]))}
-                        onChange={(style) => setOptions((o) => ({ ...o, style }))}
-                      />
-                    </InspectorSection>
+                  <div
+                    ref={panelRef}
+                    id="inspector-panel"
+                    role="tabpanel"
+                    aria-labelledby={`inspector-tab-${tab}`}
+                    className="divide-y divide-black/[.06] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain"
+                  >
+                    {tab === "presets" && (
+                      <div className="flex flex-col gap-3 px-5 py-4">
+                        <p className="text-muted">Pick a look, then fine-tune it under Card and Canvas.</p>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-2">
+                          {PRESETS.map((preset) => {
+                            const look = presetLook(preset, !!image);
+                            return (
+                              <PresetTile
+                                key={preset.id}
+                                label={preset.label}
+                                frame={format}
+                                selected={isPresetActive(preset)}
+                                onClick={() => applyPreset(preset)}
+                              >
+                                <Scene format={format} backdrop={tunedBackdrop(look.backdrop, look.tune)}>
+                                  {renderCard({
+                                    options: { ...options, style: preset.style, theme: look.theme, size: look.size },
+                                    imageStyle: preset.image.style,
+                                    effects: look.effects,
+                                    darkBackdrop: isDarkBackdrop(look.backdrop),
+                                  })}
+                                </Scene>
+                              </PresetTile>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
-                    <InspectorSection title="Format">
-                      <div className="flex flex-col gap-0.5">
-                        {FORMATS.map((f) => (
-                          <button
-                            key={f.id}
-                            type="button"
-                            aria-pressed={f.id === format.id}
-                            onClick={() => setFormatId(f.id)}
-                            className={clsx(
-                              "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-[color,background-color] lg:py-1.5",
-                              f.id === format.id ? "bg-well text-ink" : "text-muted hover:text-ink",
-                            )}
-                          >
-                            <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center">
-                              <span
-                                className={clsx(
-                                  "block rounded-[2px] border-[1.5px]",
-                                  f.id === format.id ? "border-ink" : "border-current",
-                                )}
-                                style={
-                                  f.width >= f.height
-                                    ? { width: 18, height: Math.round((18 * f.height) / f.width) }
-                                    : { height: 18, width: Math.round((18 * f.width) / f.height) }
+                    {tab === "card" && (
+                      <>
+                        <InspectorSection title="Style">
+                          {image ? (
+                            <Segmented value={imageStyle} values={IMAGE_STYLES} labels={IMAGE_STYLE_LABELS} onChange={setImageStyle} />
+                          ) : (
+                            <Segmented
+                              value={options.style}
+                              values={STYLES.map((s) => s.id)}
+                              labels={Object.fromEntries(STYLES.map((s) => [s.id, s.label]))}
+                              onChange={(style) => setOptions((o) => ({ ...o, style }))}
+                            />
+                          )}
+                        </InspectorSection>
+
+                        <InspectorSection
+                          title="Layout"
+                          action={
+                            options.size !== DEFAULT_SIZE && (
+                              <ResetButton label="card size" onClick={() => setOptions((o) => ({ ...o, size: DEFAULT_SIZE }))} />
+                            )
+                          }
+                        >
+                          <Segmented
+                            value={options.theme}
+                            values={["light", "dark"] as const}
+                            labels={{ light: "Light", dark: "Dark" }}
+                            onChange={(theme) => setOptions((o) => ({ ...o, theme }))}
+                          />
+                          {/* An image sets its own proportions. */}
+                          {!image && options.style !== "ticket" && (
+                            <Segmented
+                              value={options.shape}
+                              values={["square", "rectangle"] as CardShape[]}
+                              labels={{ square: "Square", rectangle: "Rectangle" }}
+                              onChange={(shape) => setOptions((o) => ({ ...o, shape }))}
+                            />
+                          )}
+                          <Slider
+                            label="Size"
+                            value={options.size}
+                            min={0}
+                            max={100}
+                            // Reads as how much of the frame's width the card covers, which means the same on every format.
+                            format={() => `${Math.round((shownWidth / format.width) * 100)}%`}
+                            onChange={(size) => setOptions((o) => ({ ...o, size }))}
+                          />
+                        </InspectorSection>
+
+                        <InspectorSection title="Frame">
+                          <Segmented
+                            value={effects.frame}
+                            values={FRAME_STYLES}
+                            labels={{ none: "None", glass: "Glass", solid: "Solid", line: "Line" }}
+                            onChange={(frame) => updateEffects({ frame })}
+                          />
+                          <Slider
+                            label="Width"
+                            value={effects.frameWidth}
+                            min={4}
+                            max={32}
+                            disabled={effects.frame === "none"}
+                            format={String}
+                            onChange={(frameWidth) => updateEffects({ frameWidth })}
+                          />
+                        </InspectorSection>
+
+                        <InspectorSection
+                          title="Shadow and tilt"
+                          action={
+                            differs(effects, DEFAULT_EFFECTS, DEPTH_KEYS) && (
+                              <ResetButton
+                                label="shadow and tilt"
+                                onClick={() =>
+                                  updateEffects(Object.fromEntries(DEPTH_KEYS.map((key) => [key, DEFAULT_EFFECTS[key]])))
                                 }
                               />
-                            </span>
-                            <span className="flex-1">{f.label}</span>
-                            <span className="font-mono text-xs text-muted">{f.ratio}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </InspectorSection>
-
-                    <InspectorSection
-                      title="Background"
-                      action={
-                        differs(tune, defaultTune(backdrop)) && (
-                          <ResetButton label="background adjustments" onClick={() => setTune(defaultTune(backdrop))} />
-                        )
-                      }
-                    >
-                      <div className="grid grid-cols-8 gap-1.5 lg:grid-cols-4">
-                        {BACKDROPS.map((b) => (
-                          <button
-                            key={b.id}
-                            type="button"
-                            title={b.label}
-                            aria-label={`${b.label} background`}
-                            aria-pressed={"id" in backdrop && backdrop.id === b.id}
-                            onClick={() => pickBackdrop(b)}
-                            className={clsx(
-                              "press aspect-square rounded-lg ring-offset-2 transition-[box-shadow,scale]",
-                              "id" in backdrop && backdrop.id === b.id
-                                ? "ring-2 ring-ink"
-                                : "ring-1 ring-black/10 hover:ring-black/25",
-                            )}
-                            style={backdropStyle(b)}
-                          />
-                        ))}
-                        <label
-                          title="Upload your own"
-                          className={clsx(
-                            "press flex aspect-square cursor-pointer items-center justify-center rounded-lg text-muted ring-offset-2 transition-[color,box-shadow,scale] hover:text-ink",
-                            FILE_FOCUS,
-                            "upload" in backdrop ? "ring-2 ring-ink" : "border border-dashed border-black/20",
-                          )}
+                            )
+                          }
                         >
-                          <ImagePlus className="h-4 w-4" strokeWidth={1.5} absoluteStrokeWidth />
-                          <span className="sr-only">Upload a background image</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="sr-only"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              // Clear the value so picking the same file again still fires.
-                              e.target.value = "";
-                              if (!file) return;
-                              const image = await readFile(file);
-                              pickBackdrop({ upload: image, dark: await isDarkImage(image) });
-                            }}
-                          />
-                        </label>
-                      </div>
-                      <div className="flex flex-col">
-                        <Slider
-                          label="Hue"
-                          value={tune.hue}
-                          min={0}
-                          max={359}
-                          track={hueTrack(backdrop)}
-                          disabled={!tunable.hue}
-                          format={(v) => `${v}°`}
-                          onChange={(hue) => updateTune({ hue })}
-                        />
-                        <Slider
-                          label="Intensity"
-                          value={tune.intensity}
-                          min={-100}
-                          max={100}
-                          disabled={!tunable.intensity}
-                          format={signed("%")}
-                          onChange={(intensity) => updateTune({ intensity })}
-                        />
-                        <Slider
-                          label="Blur"
-                          value={tune.blur}
-                          min={0}
-                          max={60}
-                          disabled={!tunable.blur}
-                          format={(v) => `${v}px`}
-                          onChange={(blur) => updateTune({ blur })}
-                        />
-                        <Slider
-                          label="Grain"
-                          value={tune.grain}
-                          min={0}
-                          max={100}
-                          format={(v) => `${v}%`}
-                          onChange={(grain) => updateTune({ grain })}
-                        />
-                      </div>
-                    </InspectorSection>
-
-                    <InspectorSection title="Layout">
-                      <div className="grid grid-cols-2 gap-2">
-                        <Segmented
-                          value={options.size}
-                          values={["S", "M", "L"] as CardSize[]}
-                          onChange={(size) => setOptions((o) => ({ ...o, size }))}
-                        />
-                        <Segmented
-                          value={options.theme}
-                          values={["light", "dark"] as const}
-                          labels={{ light: "Light", dark: "Dark" }}
-                          onChange={(theme) => setOptions((o) => ({ ...o, theme }))}
-                        />
-                      </div>
-                      {options.style !== "ticket" && (
-                        <Segmented
-                          value={options.shape}
-                          values={["square", "rectangle"] as CardShape[]}
-                          labels={{ square: "Square", rectangle: "Rectangle" }}
-                          onChange={(shape) => setOptions((o) => ({ ...o, shape }))}
-                        />
-                      )}
-                    </InspectorSection>
-
-                    <InspectorSection title="Frame">
-                      <Segmented
-                        value={effects.frame}
-                        values={FRAME_STYLES}
-                        labels={{ none: "None", glass: "Glass", solid: "Solid", line: "Line" }}
-                        onChange={(frame) => updateEffects({ frame })}
-                      />
-                      <Slider
-                        label="Width"
-                        value={effects.frameWidth}
-                        min={4}
-                        max={32}
-                        disabled={effects.frame === "none"}
-                        format={String}
-                        onChange={(frameWidth) => updateEffects({ frameWidth })}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection
-                      title="Shadow and tilt"
-                      action={
-                        differs(effects, DEFAULT_EFFECTS, DEPTH_KEYS) && (
-                          <ResetButton
-                            label="shadow and tilt"
-                            onClick={() =>
-                              updateEffects(Object.fromEntries(DEPTH_KEYS.map((key) => [key, DEFAULT_EFFECTS[key]])))
-                            }
-                          />
-                        )
-                      }
-                    >
-                      <div className="flex flex-col">
-                        <Slider
-                          label="Shadow"
-                          value={effects.shadow}
-                          min={0}
-                          max={100}
-                          format={(v) => `${v}%`}
-                          onChange={(shadow) => updateEffects({ shadow })}
-                        />
-                        <Slider
-                          label="Rotate"
-                          value={effects.rotate}
-                          min={-30}
-                          max={30}
-                          format={signed("°")}
-                          onChange={(rotate) => updateEffects({ rotate })}
-                        />
-                        <Slider
-                          label="Tilt X"
-                          value={effects.tiltX}
-                          min={-40}
-                          max={40}
-                          format={signed("°")}
-                          onChange={(tiltX) => updateEffects({ tiltX })}
-                        />
-                        <Slider
-                          label="Tilt Y"
-                          value={effects.tiltY}
-                          min={-40}
-                          max={40}
-                          format={signed("°")}
-                          onChange={(tiltY) => updateEffects({ tiltY })}
-                        />
-                      </div>
-                    </InspectorSection>
-
-                    <InspectorSection title="Show">
-                      <div className="flex flex-col gap-0.5">
-                        {profile.stats.map((s) => (
-                          <Switch
-                            key={s.key}
-                            label={capitalize(s.label)}
-                            checked={options.visibleStats.includes(s.key)}
-                            onChange={(on) =>
-                              setOptions((o) => ({
-                                ...o,
-                                visibleStats: on
-                                  ? [...o.visibleStats, s.key]
-                                  : o.visibleStats.filter((k) => k !== s.key),
-                              }))
-                            }
-                          />
-                        ))}
-                        <Switch
-                          label="Verified badge"
-                          checked={options.showVerified}
-                          onChange={(showVerified) => setOptions((o) => ({ ...o, showVerified }))}
-                        />
-                        {cardConfig.hasBanner && options.style === "native" && (
-                          <Switch
-                            label="Banner"
-                            checked={options.showBanner}
-                            onChange={(showBanner) => setOptions((o) => ({ ...o, showBanner }))}
-                          />
-                        )}
-                        <Switch
-                          label={`${cardConfig.label} logo`}
-                          checked={options.showPlatformMark}
-                          onChange={(showPlatformMark) => setOptions((o) => ({ ...o, showPlatformMark }))}
-                        />
-                      </div>
-                    </InspectorSection>
-
-                    <details className="group" open={!cardConfig.fetchable}>
-                      <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 font-medium [&::-webkit-details-marker]:hidden">
-                        Edit details
-                        <ChevronDown
-                          className="h-4 w-4 text-muted transition-[rotate] duration-200 ease-in-out group-open:rotate-180 motion-reduce:transition-none"
-                          strokeWidth={2}
-                          absoluteStrokeWidth
-                        />
-                      </summary>
-                      <div className="flex flex-col gap-3 px-5 pb-5">
-                        <Field label="Name" value={profile.name} onChange={(name) => updateProfile({ name })} />
-                        <Field
-                          label={profile.platform === "linkedin" ? "Headline" : "Bio"}
-                          value={profile.bio}
-                          multiline
-                          onChange={(bio) => updateProfile({ bio })}
-                        />
-                        <div className="grid grid-cols-3 gap-2">
-                          {profile.stats.map((s) => (
-                            <Field
-                              key={s.key}
-                              label={capitalize(s.label)}
-                              type="number"
-                              value={String(s.value)}
-                              onChange={(v) => updateStat(s.key, Math.max(0, Number(v) || 0))}
+                          <div className="flex flex-col">
+                            <Slider
+                              label="Shadow"
+                              value={effects.shadow}
+                              min={0}
+                              max={100}
+                              format={(v) => `${v}%`}
+                              onChange={(shadow) => updateEffects({ shadow })}
                             />
-                          ))}
-                        </div>
-                        <div className="flex gap-2">
-                          <ImageInput label="Photo" onChange={(avatarUrl) => updateProfile({ avatarUrl })} />
-                          {cardConfig.hasBanner && (
-                            <ImageInput label="Banner" onChange={(bannerUrl) => updateProfile({ bannerUrl })} />
-                          )}
-                        </div>
-                        <Switch
-                          label="Account is verified"
-                          checked={profile.verified}
-                          onChange={(verified) => updateProfile({ verified })}
-                        />
-                      </div>
-                    </details>
+                            <Slider
+                              label="Rotate"
+                              value={effects.rotate}
+                              min={-30}
+                              max={30}
+                              format={signed("°")}
+                              onChange={(rotate) => updateEffects({ rotate })}
+                            />
+                            <Slider
+                              label="Tilt X"
+                              value={effects.tiltX}
+                              min={-40}
+                              max={40}
+                              format={signed("°")}
+                              onChange={(tiltX) => updateEffects({ tiltX })}
+                            />
+                            <Slider
+                              label="Tilt Y"
+                              value={effects.tiltY}
+                              min={-40}
+                              max={40}
+                              format={signed("°")}
+                              onChange={(tiltY) => updateEffects({ tiltY })}
+                            />
+                          </div>
+                        </InspectorSection>
+
+                        {image ? (
+                          <InspectorSection title="Image">
+                            <div className="flex items-center gap-3">
+                              {/* eslint-disable-next-line @next/next/no-img-element -- a data URL thumbnail */}
+                              <img src={image.src} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover ring-1 ring-black/10" />
+                              <div className="min-w-0 leading-snug">
+                                <div className="font-mono text-xs tabular-nums">
+                                  {image.width} × {image.height}
+                                </div>
+                                <div className="text-xs text-muted">Drop or paste another to swap it.</div>
+                              </div>
+                            </div>
+                            <div className="flex">
+                              <ImageInput label="Replace image" onFile={openImage} />
+                            </div>
+                          </InspectorSection>
+                        ) : (
+                          <>
+                            <InspectorSection title="Show">
+                              <div className="flex flex-col gap-0.5">
+                                {profile.stats.map((s) => (
+                                  <Switch
+                                    key={s.key}
+                                    label={capitalize(s.label)}
+                                    checked={options.visibleStats.includes(s.key)}
+                                    onChange={(on) =>
+                                      setOptions((o) => ({
+                                        ...o,
+                                        visibleStats: on
+                                          ? [...o.visibleStats, s.key]
+                                          : o.visibleStats.filter((k) => k !== s.key),
+                                      }))
+                                    }
+                                  />
+                                ))}
+                                <Switch
+                                  label="Verified badge"
+                                  checked={options.showVerified}
+                                  onChange={(showVerified) => setOptions((o) => ({ ...o, showVerified }))}
+                                />
+                                {cardConfig.hasBanner && options.style === "native" && (
+                                  <Switch
+                                    label="Banner"
+                                    checked={options.showBanner}
+                                    onChange={(showBanner) => setOptions((o) => ({ ...o, showBanner }))}
+                                  />
+                                )}
+                                <Switch
+                                  label={`${cardConfig.label} logo`}
+                                  checked={options.showPlatformMark}
+                                  onChange={(showPlatformMark) => setOptions((o) => ({ ...o, showPlatformMark }))}
+                                />
+                              </div>
+                            </InspectorSection>
+
+                            <details className="group">
+                              <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 font-medium [&::-webkit-details-marker]:hidden">
+                                Edit details
+                                <ChevronDown
+                                  className="h-4 w-4 text-muted transition-[rotate] duration-200 ease-in-out group-open:rotate-180 motion-reduce:transition-none"
+                                  strokeWidth={2}
+                                  absoluteStrokeWidth
+                                />
+                              </summary>
+                              <div className="flex flex-col gap-3 px-5 pb-5">
+                                <Field label="Name" value={profile.name} onChange={(name) => updateProfile({ name })} />
+                                <Field
+                                  label="Bio"
+                                  value={profile.bio}
+                                  multiline
+                                  onChange={(bio) => updateProfile({ bio })}
+                                />
+                                <div className="grid grid-cols-3 gap-2">
+                                  {profile.stats.map((s) => (
+                                    <Field
+                                      key={s.key}
+                                      label={capitalize(s.label)}
+                                      type="number"
+                                      value={String(s.value)}
+                                      onChange={(v) => updateStat(s.key, Math.max(0, Number(v) || 0))}
+                                    />
+                                  ))}
+                                </div>
+                                <div className="flex gap-2">
+                                  <ImageInput
+                                    label="Upload photo"
+                                    onFile={async (file) => updateProfile({ avatarUrl: await readFile(file) })}
+                                  />
+                                  {cardConfig.hasBanner && (
+                                    <ImageInput
+                                      label="Upload banner"
+                                      onFile={async (file) => updateProfile({ bannerUrl: await readFile(file) })}
+                                    />
+                                  )}
+                                </div>
+                                <Switch
+                                  label="Account is verified"
+                                  checked={profile.verified}
+                                  onChange={(verified) => updateProfile({ verified })}
+                                />
+                              </div>
+                            </details>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    {tab === "canvas" && (
+                      <>
+                        <InspectorSection title="Format">
+                          <div className="flex flex-col gap-0.5">
+                            {FORMATS.map((f) => (
+                              <button
+                                key={f.id}
+                                type="button"
+                                aria-pressed={f.id === format.id}
+                                onClick={() => setFormatId(f.id)}
+                                className={clsx(
+                                  "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-[color,background-color] lg:py-1.5",
+                                  f.id === format.id ? "bg-well text-ink" : "text-muted hover:text-ink",
+                                )}
+                              >
+                                <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center">
+                                  <span
+                                    className={clsx(
+                                      "block rounded-[2px] border-[1.5px]",
+                                      f.id === format.id ? "border-ink" : "border-current",
+                                    )}
+                                    style={
+                                      f.width >= f.height
+                                        ? { width: 18, height: Math.round((18 * f.height) / f.width) }
+                                        : { height: 18, width: Math.round((18 * f.width) / f.height) }
+                                    }
+                                  />
+                                </span>
+                                <span className="flex-1">{f.label}</span>
+                                <span className="font-mono text-xs text-muted">{f.ratio}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </InspectorSection>
+
+                        <InspectorSection
+                          title="Background"
+                          action={
+                            differs(tune, defaultTune(backdrop)) && (
+                              <ResetButton label="background adjustments" onClick={() => setTune(defaultTune(backdrop))} />
+                            )
+                          }
+                        >
+                          <div className="grid grid-cols-8 gap-1.5 lg:grid-cols-4">
+                            {BACKDROPS.map((b) => (
+                              <button
+                                key={b.id}
+                                type="button"
+                                title={b.label}
+                                aria-label={`${b.label} background`}
+                                aria-pressed={"id" in backdrop && backdrop.id === b.id}
+                                onClick={() => pickBackdrop(b)}
+                                className={clsx(
+                                  "press aspect-square rounded-lg ring-offset-2 transition-[box-shadow,scale]",
+                                  "id" in backdrop && backdrop.id === b.id
+                                    ? "ring-2 ring-ink"
+                                    : "ring-1 ring-black/10 hover:ring-black/25",
+                                )}
+                                style={backdropStyle(b)}
+                              />
+                            ))}
+                            <label
+                              title="Upload your own"
+                              className={clsx(
+                                "press flex aspect-square cursor-pointer items-center justify-center rounded-lg text-muted ring-offset-2 transition-[color,box-shadow,scale] hover:text-ink",
+                                FILE_FOCUS,
+                                "upload" in backdrop ? "ring-2 ring-ink" : "border border-dashed border-black/20",
+                              )}
+                            >
+                              <ImagePlus className="h-4 w-4" strokeWidth={1.5} absoluteStrokeWidth />
+                              <span className="sr-only">Upload a background image</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  // Clear the value so picking the same file again still fires.
+                                  e.target.value = "";
+                                  if (!file) return;
+                                  const image = await readFile(file);
+                                  pickBackdrop({ upload: image, dark: await isDarkImage(image) });
+                                }}
+                              />
+                            </label>
+                          </div>
+                          <div className="flex flex-col">
+                            <Slider
+                              label="Hue"
+                              value={tune.hue}
+                              min={0}
+                              max={359}
+                              track={hueTrack(backdrop)}
+                              disabled={!tunable.hue}
+                              format={(v) => `${v}°`}
+                              onChange={(hue) => updateTune({ hue })}
+                            />
+                            <Slider
+                              label="Intensity"
+                              value={tune.intensity}
+                              min={-100}
+                              max={100}
+                              disabled={!tunable.intensity}
+                              format={signed("%")}
+                              onChange={(intensity) => updateTune({ intensity })}
+                            />
+                            <Slider
+                              label="Blur"
+                              value={tune.blur}
+                              min={0}
+                              max={60}
+                              disabled={!tunable.blur}
+                              format={(v) => `${v}px`}
+                              onChange={(blur) => updateTune({ blur })}
+                            />
+                            <Slider
+                              label="Grain"
+                              value={tune.grain}
+                              min={0}
+                              max={100}
+                              format={(v) => `${v}%`}
+                              onChange={(grain) => updateTune({ grain })}
+                            />
+                          </div>
+                        </InspectorSection>
+                      </>
+                    )}
                   </div>
 
                   <div className="sticky bottom-0 z-10 flex gap-2 border-t border-black/[.06] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:static">
@@ -964,6 +1302,287 @@ export function Studio() {
         </Reveal>
       </section>
     </>
+  );
+}
+
+/**
+ * The groups of settings, pinned above them: in their own row on desktop, under the sticky preview on phones.
+ * Arrow keys move between tabs, as in any tab list.
+ */
+function InspectorTabs({
+  value,
+  onChange,
+  ref,
+}: {
+  value: InspectorTab;
+  onChange: (tab: InspectorTab) => void;
+  ref: React.Ref<HTMLDivElement>;
+}) {
+  const index = INSPECTOR_TABS.findIndex((t) => t.id === value);
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = INSPECTOR_TABS[(index + step + INSPECTOR_TABS.length) % INSPECTOR_TABS.length].id;
+    onChange(next);
+    document.getElementById(`inspector-tab-${next}`)?.focus();
+  }
+
+  return (
+    <div
+      ref={ref}
+      role="tablist"
+      aria-label="Settings"
+      onKeyDown={onKeyDown}
+      className="sticky top-[250px] z-10 flex border-b border-black/[.06] bg-white px-2 sm:top-[400px] lg:relative lg:top-0"
+    >
+      {INSPECTOR_TABS.map((t) => (
+        <button
+          key={t.id}
+          id={`inspector-tab-${t.id}`}
+          type="button"
+          role="tab"
+          aria-selected={t.id === value}
+          aria-controls="inspector-panel"
+          tabIndex={t.id === value ? 0 : -1}
+          onClick={() => onChange(t.id)}
+          className={clsx(
+            "flex-1 py-3 text-[13px] transition-[color]",
+            t.id === value ? "font-medium text-ink" : "text-muted hover:text-ink",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
+      {/* One underline slides between the tabs, like the pill in the platform tabs. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -bottom-px left-2 px-4 transition-transform duration-200 ease-in-out motion-reduce:transition-none"
+        style={{ width: `calc((100% - 16px) / ${INSPECTOR_TABS.length})`, transform: `translateX(${index * 100}%)` }}
+      >
+        <span className="block h-0.5 rounded-full bg-ink" />
+      </span>
+    </div>
+  );
+}
+
+/** The frame at its full export size: the tuned background, its grain, and the card on top. */
+function Scene({
+  format,
+  backdrop,
+  ref,
+  children,
+}: {
+  format: { width: number; height: number };
+  backdrop: ReturnType<typeof tunedBackdrop>;
+  ref?: React.Ref<HTMLDivElement>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      ref={ref}
+      className="relative isolate flex items-center justify-center overflow-hidden"
+      style={{ width: format.width, height: format.height }}
+    >
+      <div aria-hidden className="absolute" style={backdrop.layer} />
+      {backdrop.grain && <div aria-hidden className="absolute inset-0" style={backdrop.grain} />}
+      {children}
+    </div>
+  );
+}
+
+/** A preset drawn as a live miniature of the frame, so every tile previews the real card in that look. */
+function PresetTile({
+  label,
+  frame,
+  selected,
+  onClick,
+  children,
+}: {
+  label: string;
+  frame: { width: number; height: number };
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const tileRef = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const el = tileRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const scale = width / frame.width;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={selected}
+      onClick={onClick}
+      className="press group flex flex-col gap-1.5 text-left transition-[scale]"
+    >
+      <span
+        ref={tileRef}
+        aria-hidden
+        className={clsx(
+          "pointer-events-none relative block w-full overflow-hidden rounded-lg ring-offset-2 transition-[box-shadow]",
+          selected ? "ring-2 ring-ink" : "ring-1 ring-black/10 group-hover:ring-black/25",
+        )}
+        style={{ aspectRatio: `${frame.width} / ${frame.height}` }}
+      >
+        {/* Drawn once measured, which also keeps the miniatures out of the server HTML. */}
+        {scale > 0 && (
+          <span className="absolute top-0 left-0 origin-top-left" style={{ transform: `scale(${scale})` }}>
+            {children}
+          </span>
+        )}
+      </span>
+      <span className={clsx("text-xs", selected ? "font-medium text-ink" : "text-muted")}>{label}</span>
+    </button>
+  );
+}
+
+/**
+ * The platform switch at the start of the Profile pill: its icon opens a menu of the platforms we pull from.
+ * Arrow keys move through the menu, Enter picks, Escape closes it.
+ */
+function PlatformPicker({ value, onChange }: { value: PlatformId; onChange: (platform: PlatformId) => void }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const Icon = PLATFORM_ICONS[value];
+
+  // A press anywhere outside closes it.
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
+
+  // It opens on the platform already picked, so Enter keeps it.
+  useEffect(() => {
+    if (open) itemRefs.current[PLATFORM_ORDER.indexOf(value)]?.focus();
+  }, [open, value]);
+
+  function pick(platform: PlatformId) {
+    setOpen(false);
+    onChange(platform);
+  }
+
+  function onMenuKeyDown(e: React.KeyboardEvent) {
+    const items = itemRefs.current;
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const focus = (index: number) => items[(index + items.length) % items.length]?.focus();
+    if (e.key === "ArrowDown") focus(at + 1);
+    else if (e.key === "ArrowUp") focus(at - 1);
+    else if (e.key === "Home") focus(0);
+    else if (e.key === "End") focus(items.length - 1);
+    else if (e.key === "Escape") {
+      setOpen(false);
+      buttonRef.current?.focus();
+    } else {
+      if (e.key === "Tab") setOpen(false);
+      return;
+    }
+    e.preventDefault();
+  }
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Platform: ${PLATFORMS[value].label}`}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+          e.preventDefault();
+          setOpen(true);
+        }}
+        className="press flex items-center gap-1 rounded-full py-2 pr-2 pl-2.5 transition-[background-color,scale] hover:bg-well aria-expanded:bg-well"
+      >
+        <Icon className="h-4 w-4" />
+        <ChevronDown
+          className={clsx(
+            "h-3.5 w-3.5 text-muted transition-[rotate] duration-200 ease-in-out motion-reduce:transition-none",
+            open && "rotate-180",
+          )}
+          strokeWidth={2}
+          absoluteStrokeWidth
+        />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Platform"
+          onKeyDown={onMenuKeyDown}
+          className="menu-in absolute top-[calc(100%+10px)] -left-1 z-30 w-52 origin-top-left rounded-2xl border border-transparent bg-white p-1.5 text-left shadow-[0_1px_2px_rgba(42,42,39,.08),0_16px_40px_-12px_rgba(42,42,39,.35)] ring-1 ring-black/[.06]"
+        >
+          {PLATFORM_ORDER.map((id, index) => {
+            const ItemIcon = PLATFORM_ICONS[id];
+            return (
+              <button
+                key={id}
+                ref={(el) => {
+                  itemRefs.current[index] = el;
+                }}
+                type="button"
+                role="menuitemradio"
+                aria-checked={id === value}
+                tabIndex={-1}
+                onClick={() => pick(id)}
+                // The highlight follows the pointer as well as the keys, so there's only ever one.
+                onPointerEnter={(e) => e.currentTarget.focus()}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm outline-none transition-[background-color] focus:bg-well"
+              >
+                <ItemIcon className="h-4 w-4 shrink-0" />
+                <span className={clsx("flex-1", id === value && "font-medium")}>{PLATFORMS[id].label}</span>
+                {id === value && <Check className="h-4 w-4" strokeWidth={2} absoluteStrokeWidth />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Collaborator-style cursor pointing into the pill above it; leaves faster than it returns. */
+function HintCursor({ label, hidden }: { label: string; hidden: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className={clsx(
+        "pointer-events-none absolute top-[54%] left-[31%] hidden transition-opacity group-focus-within:opacity-0 group-focus-within:duration-150 sm:block",
+        hidden ? "opacity-0 duration-150" : "duration-300",
+      )}
+    >
+      <div className="cursor-nudge flex items-start">
+        <svg viewBox="0 0 20 22" className="h-[22px] w-5 drop-shadow-[0_2px_4px_rgba(60,40,140,.35)]">
+          <path
+            d="M2 2 L2 18 L6.5 13.8 L9.6 20.2 L12.4 18.9 L9.4 12.6 L15.6 12.4 Z"
+            fill="#7c5cff"
+            stroke="#fff"
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="mt-4 -ml-1 rounded-full rounded-tl-sm bg-[#7c5cff] px-2.5 py-1 text-xs font-medium whitespace-nowrap text-white shadow-[0_4px_12px_-4px_rgba(60,40,140,.5)]">
+          {label}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -1171,7 +1790,7 @@ function Field({
   );
 }
 
-function ImageInput({ label, onChange }: { label: string; onChange: (dataUrl: string) => void }) {
+function ImageInput({ label, onFile }: { label: string; onFile: (file: File) => void }) {
   return (
     <label
       className={clsx(
@@ -1180,15 +1799,15 @@ function ImageInput({ label, onChange }: { label: string; onChange: (dataUrl: st
       )}
     >
       <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} absoluteStrokeWidth />
-      Upload {label.toLowerCase()}
+      {label}
       <input
         type="file"
         accept="image/*"
         className="sr-only"
-        onChange={async (e) => {
+        onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
-          if (file) onChange(await readFile(file));
+          if (file) onFile(file);
         }}
       />
     </label>

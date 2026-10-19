@@ -1,4 +1,4 @@
-export type PlatformId = "x" | "github" | "linkedin" | "instagram" | "youtube";
+export type PlatformId = "x" | "github" | "instagram" | "youtube";
 
 export interface Stat {
   key: string;
@@ -24,8 +24,6 @@ export interface PlatformConfig {
   /** Shown before the handle input, e.g. "x.com/" */
   prefix: string;
   placeholder: string;
-  /** Whether we can pull public data automatically. Otherwise the user fills details by hand. */
-  fetchable: boolean;
   /** Default stat rows for a blank profile, in display order. */
   stats: { key: string; label: string }[];
   /** Stat keys visible by default. */
@@ -39,7 +37,6 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     label: "X",
     prefix: "x.com/",
     placeholder: "ArmanKiyotaka",
-    fetchable: true,
     stats: [
       { key: "followers", label: "followers" },
       { key: "following", label: "following" },
@@ -53,7 +50,6 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     label: "GitHub",
     prefix: "github.com/",
     placeholder: "octocat",
-    fetchable: true,
     stats: [
       { key: "followers", label: "followers" },
       { key: "following", label: "following" },
@@ -62,25 +58,11 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     defaultVisible: ["followers", "following", "repos"],
     hasBanner: false,
   },
-  linkedin: {
-    id: "linkedin",
-    label: "LinkedIn",
-    prefix: "linkedin.com/in/",
-    placeholder: "your-name",
-    fetchable: false,
-    stats: [
-      { key: "connections", label: "connections" },
-      { key: "followers", label: "followers" },
-    ],
-    defaultVisible: ["connections", "followers"],
-    hasBanner: true,
-  },
   instagram: {
     id: "instagram",
     label: "Instagram",
     prefix: "instagram.com/",
     placeholder: "your.handle",
-    fetchable: true,
     stats: [
       { key: "posts", label: "posts" },
       { key: "followers", label: "followers" },
@@ -94,7 +76,6 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     label: "YouTube",
     prefix: "youtube.com/@",
     placeholder: "yourchannel",
-    fetchable: true,
     stats: [
       { key: "subscribers", label: "subscribers" },
       { key: "videos", label: "videos" },
@@ -105,7 +86,11 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
   },
 };
 
-export const PLATFORM_ORDER: PlatformId[] = ["x", "github", "youtube", "instagram", "linkedin"];
+export const PLATFORM_ORDER: PlatformId[] = ["x", "github", "youtube", "instagram"];
+
+/** Where a card's content comes from: an image, a captured website, or a profile on one of the platforms. */
+export const SOURCES = ["image", "website", "profile"] as const;
+export type Source = (typeof SOURCES)[number];
 
 export function isPlatformId(value: string): value is PlatformId {
   return value in PLATFORMS;
@@ -116,7 +101,6 @@ export function normalizeHandle(input: string): string {
   let value = input.trim();
   value = value.replace(/^https?:\/\//, "").replace(/^www\./, "");
   value = value.replace(/^(x|twitter|github|instagram|youtube|m\.youtube)\.com\//i, "");
-  value = value.replace(/^linkedin\.com\/in\//i, "");
   value = value.split(/[/?#]/)[0];
   return value.replace(/^@/, "");
 }

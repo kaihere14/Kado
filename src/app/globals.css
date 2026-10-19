@@ -216,6 +216,40 @@ body {
   }
 }
 
+/* The headline's rotating subject: the old one lifts away as the new one rises in. */
+@keyframes title-enter {
+  from {
+    opacity: 0;
+    filter: blur(0.08em);
+    transform: translateY(0.2em);
+  }
+}
+
+@keyframes title-leave {
+  to {
+    opacity: 0;
+    filter: blur(0.08em);
+    transform: translateY(-0.2em);
+  }
+}
+
+.title-enter {
+  animation: title-enter 440ms cubic-bezier(0.22, 1, 0.36, 1) 110ms both;
+}
+
+.title-leave {
+  animation: title-leave 240ms cubic-bezier(0.55, 0, 1, 0.45) both;
+  pointer-events: none;
+}
+
+/* The platform menu drops open from its button. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+
 /* The hint cursor drifts toward the handle input, like someone about to click it. */
 @keyframes cursor-nudge {
   0%,
@@ -229,6 +263,10 @@ body {
 
 .card-in {
   animation: fade-in 300ms var(--ease-out) both;
+}
+
+.menu-in {
+  animation: fade-in 150ms var(--ease-out) both;
 }
 
 /* iOS paints the card's blurred shadow as a hard, offset block in exports, so those go out flat. */
@@ -252,6 +290,10 @@ body {
 @media (prefers-reduced-motion: no-preference) {
   .card-in {
     animation-name: card-in;
+  }
+
+  .menu-in {
+    animation-name: menu-in;
   }
 
   .reveal.is-visible {

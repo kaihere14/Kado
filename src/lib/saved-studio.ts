@@ -1,4 +1,5 @@
-import { DEFAULT_EFFECTS, FRAME_STYLES, type CardEffects, type CardOptions } from "@/components/profile-card";
+import { IMAGE_STYLES, type ImageStyle } from "@/components/image-card";
+import { DEFAULT_EFFECTS, DEFAULT_SIZE, FRAME_STYLES, type CardEffects, type CardOptions } from "@/components/profile-card";
 import {
   BACKDROPS,
   DEFAULT_BACKDROP,
@@ -7,13 +8,20 @@ import {
   type BackdropChoice,
   type BackdropTune,
 } from "./backdrops";
+import { isCardImage, type CardImage } from "./card-image";
 import { FORMATS } from "./formats";
-import { isPlatformId, type PlatformId, type Profile } from "./platforms";
+import { isPlatformId, SOURCES, type PlatformId, type Profile, type Source } from "./platforms";
 
 export interface SavedStudio {
+  /** The tab picked above the studio. */
+  source: Source;
+  /** The platform picked in the Profile tab. */
   platform: PlatformId;
   input: string;
   profile: Profile;
+  /** Shown in place of the profile when set. */
+  image: CardImage | null;
+  imageStyle: ImageStyle;
   options: CardOptions;
   backdrop: BackdropChoice;
   tune: BackdropTune;
@@ -23,6 +31,9 @@ export interface SavedStudio {
 
 // Bump the version whenever the saved shape changes, so old saves are dropped instead of misread.
 const STORAGE_KEY = "kado:studio:v1";
+
+// Size was S, M or L before it became a slider; these give the same cards.
+const LEGACY_SIZES: Record<string, number> = { S: 25, M: 50, L: 75 };
 
 function isProfile(value: unknown): value is Profile {
   const p = value as Profile | null;
@@ -48,11 +59,23 @@ function withDefaults<T extends object>(defaults: T, saved: unknown): T {
   return out;
 }
 
+/**
+ * The tab and platform a save was left on. Before the Profile tab, `platform` held the tab itself: a platform id,
+ * "image" or "website". A tab that no longer exists, such as LinkedIn, falls back to Image.
+ */
+function restoreSource(saved: Partial<SavedStudio>): { source: Source; platform: PlatformId } {
+  const legacy = String(saved.platform);
+  const platform = isPlatformId(legacy) ? legacy : "x";
+  if (SOURCES.includes(saved.source!)) return { source: saved.source!, platform };
+  if (legacy === "image" || legacy === "website") return { source: legacy, platform };
+  return { source: isPlatformId(legacy) ? "profile" : "image", platform };
+}
+
 /** Reads the last session's studio, or null when there is none or it no longer fits the current shape. */
 export function loadStudio(): SavedStudio | null {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<SavedStudio> | null;
-    if (!saved || !isPlatformId(saved.platform as string) || !isProfile(saved.profile)) return null;
+    if (!saved || !isProfile(saved.profile)) return null;
     // Presets are saved by id, so a tweaked gradient shows its current look rather than a stale copy.
     const backdrop =
       saved.backdrop && "upload" in saved.backdrop
@@ -60,11 +83,15 @@ export function loadStudio(): SavedStudio | null {
         : (BACKDROPS.find((b) => b.id === (saved.backdrop as Backdrop | undefined)?.id) ?? DEFAULT_BACKDROP);
     const effects = withDefaults(DEFAULT_EFFECTS, saved.effects);
     if (!FRAME_STYLES.includes(effects.frame)) effects.frame = DEFAULT_EFFECTS.frame;
+    const options = { ...saved.options } as CardOptions;
+    if (typeof options.size !== "number") options.size = LEGACY_SIZES[String(options.size)] ?? DEFAULT_SIZE;
     return {
-      platform: saved.platform as PlatformId,
+      ...restoreSource(saved),
       input: typeof saved.input === "string" ? saved.input : "",
       profile: saved.profile,
-      options: saved.options as CardOptions,
+      image: isCardImage(saved.image) ? saved.image : null,
+      imageStyle: IMAGE_STYLES.includes(saved.imageStyle!) ? saved.imageStyle! : IMAGE_STYLES[0],
+      options,
       backdrop,
       tune: withDefaults(defaultTune(backdrop), saved.tune),
       effects,
@@ -80,6 +107,7 @@ function withoutUploads(studio: SavedStudio): SavedStudio {
   return {
     ...studio,
     profile: { ...studio.profile, avatarUrl: strip(studio.profile.avatarUrl), bannerUrl: strip(studio.profile.bannerUrl) },
+    image: null,
     ...("upload" in studio.backdrop && { backdrop: DEFAULT_BACKDROP, tune: defaultTune(DEFAULT_BACKDROP) }),
   };
 }
