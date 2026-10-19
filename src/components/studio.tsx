@@ -79,8 +79,11 @@ const SOURCE_TABS: Record<Source, { label: string; Icon: typeof Globe }> = {
 
 const NOT_AN_IMAGE = "That file isn't an image. Try a PNG, JPEG or WebP.";
 
-// The server in capture-server/ that captures websites, called straight from the browser.
-const CAPTURE_URL = process.env.NEXT_PUBLIC_CAPTURE_URL;
+// The server in capture-server/ that captures websites, called straight from the browser. Without a protocol the
+// browser would read the address as a path on this site, so https:// is added when it's missing.
+const CAPTURE_URL = process.env.NEXT_PUBLIC_CAPTURE_URL?.trim()
+  .replace(/^(?!https?:\/\/)/i, "https://")
+  .replace(/\/+$/, "");
 
 const INSPECTOR_TABS = [
   { id: "canvas", label: "Canvas" },
