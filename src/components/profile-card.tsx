@@ -3,7 +3,6 @@ import { Fragment } from "react";
 import { formatCount, type PlatformId, type Profile } from "@/lib/platforms";
 import { PLATFORM_ICONS, VerifiedBadge } from "./brand-icons";
 
-export type CardSize = "S" | "M" | "L";
 export type CardTheme = "light" | "dark";
 export type CardStyle = "native" | "minimal" | "ticket";
 export type CardShape = "square" | "rectangle";
@@ -29,7 +28,8 @@ export const DEFAULT_EFFECTS: CardEffects = { frame: "none", frameWidth: 12, sha
 export interface CardOptions {
   style: CardStyle;
   shape: CardShape;
-  size: CardSize;
+  /** 0–100, from a small card to one that nearly fills the frame. */
+  size: number;
   theme: CardTheme;
   visibleStats: string[];
   showVerified: boolean;
@@ -37,21 +37,20 @@ export interface CardOptions {
   showPlatformMark: boolean;
 }
 
-// Card width as a share of the frame, capped by frame height so landscape formats never overflow.
-const WIDTH_SHARE: Record<CardSize, { ofWidth: number; ofHeight: number }> = {
-  S: { ofWidth: 0.4, ofHeight: 0.62 },
-  M: { ofWidth: 0.5, ofHeight: 0.76 },
-  L: { ofWidth: 0.6, ofHeight: 0.9 },
-};
+/** Where the size slider starts. 25, 50 and 75 give the cards that the old S, M and L sizes did. */
+export const DEFAULT_SIZE = 50;
 
-export function cardWidth(size: CardSize, frame: { width: number; height: number }): number {
-  const share = WIDTH_SHARE[size];
-  return Math.round(Math.min(frame.width * share.ofWidth, frame.height * share.ofHeight));
+/**
+ * Card width as a share of the frame: 30% at size 0 to 70% at 100. It's capped at about 1.5 card widths per
+ * frame height, so landscape formats never overflow.
+ */
+export function cardWidth(size: number, frame: { width: number; height: number }): number {
+  const ofWidth = 0.3 + (size / 100) * 0.4;
+  return Math.round(Math.min(frame.width * ofWidth, frame.height * ofWidth * 1.52));
 }
 
 const ACCENTS: Record<PlatformId, string> = {
   x: "#1d9bf0",
-  linkedin: "#0a66c2",
   github: "#8957e5",
   instagram: "#e1306c",
   youtube: "#ff0033",
@@ -80,12 +79,12 @@ const RADIUS: Record<CardStyle, number> = { native: 16, minimal: 22, ticket: 12 
  * One soft drop shadow, scaled from how it looks at strength 50. Leave out `spread` for a `drop-shadow()`
  * filter, which has none.
  */
-function dropShadow(strength: number, { y, blur, spread, rgb, alpha }: { y: number; blur: number; spread?: number; rgb: string; alpha: number }) {
+export function dropShadow(strength: number, { y, blur, spread, rgb, alpha }: { y: number; blur: number; spread?: number; rgb: string; alpha: number }) {
   const s = strength / 50;
   return `0 ${y * s}px ${blur * s}px${spread === undefined ? "" : ` ${spread * s}px`} rgba(${rgb}, ${Math.min(1, alpha * s)})`;
 }
 
-const LIFT = { y: 18, blur: 40, spread: -18, rgb: "22,22,63", alpha: 0.45 };
+export const LIFT = { y: 18, blur: 40, spread: -18, rgb: "22,22,63", alpha: 0.45 };
 
 function frameLook(frame: Exclude<FrameStyle, "none">, darkCard: boolean, darkBackdrop: boolean) {
   switch (frame) {
@@ -104,15 +103,85 @@ function frameLook(frame: Exclude<FrameStyle, "none">, darkCard: boolean, darkBa
 // A card on a glass or solid frame keeps a faint lift of its own; the frame carries the main shadow.
 const SHADOW_IN_FRAME = 12;
 
+function isSurfaceFrame(frame: FrameStyle) {
+  return frame === "glass" || frame === "solid";
+}
+
+/** The drop-shadow strength the card itself should draw under these effects. */
+export function cardShadow({ frame, shadow }: CardEffects) {
+  return isSurfaceFrame(frame) ? Math.min(shadow, SHADOW_IN_FRAME) : shadow;
+}
+
+/**
+ * Sets any card on the background: wraps it in its frame, then rotates and tilts the lot. `radius` is the
+ * card's corner radius in px, which the frame stays concentric with; `scale` turns the frame width into px.
+ */
+export function CardMount({
+  effects,
+  darkBackdrop,
+  dark,
+  width,
+  scale,
+  radius,
+  children,
+}: {
+  effects: CardEffects;
+  darkBackdrop: boolean;
+  /** Whether the card is in its dark theme. */
+  dark: boolean;
+  width: number;
+  scale: number;
+  radius: number;
+  children: React.ReactNode;
+}) {
+  const { frame, frameWidth, shadow, rotate, tiltX, tiltY } = effects;
+  let card = children;
+
+  if (frame !== "none") {
+    const gap = frameWidth * scale;
+    const border = frame === "line" ? 1.5 * scale : 1;
+    const look = frameLook(frame, dark, darkBackdrop);
+    card = (
+      <div
+        data-card-shadow
+        style={{
+          padding: gap,
+          borderRadius: radius + gap + border,
+          border: `${border}px solid ${look.line}`,
+          background: look.background,
+          boxShadow: isSurfaceFrame(frame) && shadow ? dropShadow(shadow, LIFT) : undefined,
+        }}
+      >
+        {card}
+      </div>
+    );
+  }
+
+  const tilted = tiltX || tiltY;
+  return (
+    <div
+      data-card-tilt
+      style={{
+        // A perspective a few card-widths away keeps the tilt readable without fish-eye distortion.
+        transform: tilted
+          ? `perspective(${width * 2.5}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) rotate(${rotate}deg)`
+          : rotate
+            ? `rotate(${rotate}deg)`
+            : undefined,
+      }}
+    >
+      {card}
+    </div>
+  );
+}
+
 export function ProfileCard({
   effects = DEFAULT_EFFECTS,
   darkBackdrop = true,
   ...props
 }: Omit<CardProps, "shadow"> & { effects?: CardEffects; darkBackdrop?: boolean }) {
-  const { frame, frameWidth, shadow, rotate, tiltX, tiltY } = effects;
   const scale = props.width / 360;
-  const surfaceFrame = frame === "glass" || frame === "solid";
-  const cardProps = { ...props, shadow: surfaceFrame ? Math.min(shadow, SHADOW_IN_FRAME) : shadow };
+  const cardProps = { ...props, shadow: cardShadow(effects) };
 
   let card: React.ReactNode;
   switch (props.options.style) {
@@ -138,41 +207,17 @@ export function ProfileCard({
       card = <NativeCard {...cardProps} />;
   }
 
-  if (frame !== "none") {
-    const gap = frameWidth * scale;
-    const border = frame === "line" ? 1.5 * scale : 1;
-    const look = frameLook(frame, props.options.theme === "dark", darkBackdrop);
-    card = (
-      <div
-        data-card-shadow
-        style={{
-          padding: gap,
-          borderRadius: RADIUS[props.options.style] * scale + gap + border,
-          border: `${border}px solid ${look.line}`,
-          background: look.background,
-          boxShadow: surfaceFrame && shadow ? dropShadow(shadow, LIFT) : undefined,
-        }}
-      >
-        {card}
-      </div>
-    );
-  }
-
-  const tilted = tiltX || tiltY;
   return (
-    <div
-      data-card-tilt
-      style={{
-        // A perspective a few card-widths away keeps the tilt readable without fish-eye distortion.
-        transform: tilted
-          ? `perspective(${props.width * 2.5}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) rotate(${rotate}deg)`
-          : rotate
-            ? `rotate(${rotate}deg)`
-            : undefined,
-      }}
+    <CardMount
+      effects={effects}
+      darkBackdrop={darkBackdrop}
+      dark={props.options.theme === "dark"}
+      width={props.width}
+      scale={scale}
+      radius={RADIUS[props.options.style] * scale}
     >
       {card}
-    </div>
+    </CardMount>
   );
 }
 
@@ -185,7 +230,7 @@ function useCardBasics({ profile, options, width }: CardProps) {
     PlatformIcon: PLATFORM_ICONS[profile.platform],
     stats: profile.stats.filter((s) => options.visibleStats.includes(s.key)),
     avatar: proxied(profile.avatarUrl),
-    handleText: profile.platform === "linkedin" ? `in/${profile.handle}` : `@${profile.handle}`,
+    handleText: `@${profile.handle}`,
     verified: options.showVerified && profile.verified,
   };
 }
@@ -211,9 +256,9 @@ function NativeCard(props: CardProps) {
   const rectangular = options.shape === "rectangle";
   const isInstagram = profile.platform === "instagram";
   const isYouTube = profile.platform === "youtube";
-  const hasBannerSlot = options.showBanner && (profile.platform === "x" || profile.platform === "linkedin" || isYouTube);
+  const hasBannerSlot = options.showBanner && (profile.platform === "x" || isYouTube);
   const banner = hasBannerSlot ? proxied(profile.bannerUrl) : null;
-  // X and LinkedIn tuck the avatar into the banner; YouTube insets a rounded banner above the avatar row.
+  // X tucks the avatar into the banner; YouTube insets a rounded banner above the avatar row.
   const avatarOverlapsBanner = hasBannerSlot && !isYouTube;
   const avatarSize = (isYouTube ? 64 : 72) * scale;
   // The ring cuts the avatar out of the banner (or frames Instagram's story ring); YouTube's sits clear of it.
@@ -221,7 +266,7 @@ function NativeCard(props: CardProps) {
   const padding = (rectangular ? 16 : 18) * scale;
   const surface = dark ? "#121214" : "#ffffff";
   const muted = dark ? "text-white/50" : "text-neutral-500";
-  const verifiedColor = profile.platform === "linkedin" || isYouTube ? "#71717a" : accent;
+  const verifiedColor = isYouTube ? "#71717a" : accent;
 
   const identity = (
     <>
@@ -356,9 +401,7 @@ function NativeCard(props: CardProps) {
           <div className={clsx("flex flex-wrap gap-x-[1.1em] gap-y-1", rectangular ? "mt-[0.65em]" : "mt-[0.8em]")} style={{ fontSize: "0.9em" }}>
             {stats.map((s) => (
               <span key={s.key}>
-                <span className="font-semibold" style={profile.platform === "linkedin" ? { color: accent } : undefined}>
-                  {formatCount(s.value)}
-                </span>{" "}
+                <span className="font-semibold">{formatCount(s.value)}</span>{" "}
                 <span className={muted}>{s.label}</span>
               </span>
             ))}

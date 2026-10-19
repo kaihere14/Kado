@@ -1,0 +1,23 @@
+{
+  "name": "kado-capture-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "puppeteer browsers install chrome && tsx watch src/index.ts",
+    "build": "puppeteer browsers install chrome && tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "capture-website": "^5.1.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.7.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

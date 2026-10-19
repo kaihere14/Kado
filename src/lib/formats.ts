@@ -20,7 +20,6 @@ export const FORMATS: ExportFormat[] = [
 
 export const DEFAULT_FORMAT: Record<PlatformId, string> = {
   x: "x",
-  linkedin: "linkedin",
   github: "github",
   instagram: "portrait",
   youtube: "x",
