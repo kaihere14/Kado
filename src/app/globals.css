@@ -267,8 +267,38 @@ body {
   }
 }
 
+/* A feature mockup's scene, or a part of one, settles in. */
+@keyframes scene-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(4px);
+  }
+}
+
+/* The open feature step's rule fills from the top; when it's full, the next step opens. */
+@keyframes step-progress {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.caret {
+  animation: caret-blink 1s steps(1) infinite;
+}
+
 .card-in {
   animation: fade-in 300ms var(--ease-out) both;
+}
+
+.scene-in {
+  animation: fade-in 400ms var(--ease-out) both;
 }
 
 .menu-in {
@@ -301,6 +331,15 @@ body {
 
   .menu-in {
     animation-name: menu-in;
+  }
+
+  .scene-in {
+    animation-name: scene-in;
+  }
+
+  /* Without it the rule simply shows full, and steps change only on click. */
+  .step-progress {
+    animation: step-progress linear both;
   }
 
   .reveal.is-visible {

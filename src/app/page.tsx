@@ -1,34 +1,11 @@
 import Link from "next/link";
-import { Globe, ImageIcon, Plus } from "lucide-react";
-import { GitHubIcon, PLATFORM_ICONS } from "@/components/brand-icons";
+import { Plus } from "lucide-react";
+import { GitHubIcon } from "@/components/brand-icons";
+import { Features } from "@/components/features";
 import { KadoLogo } from "@/components/kado-logo";
 import { Reveal } from "@/components/reveal";
 import { Studio } from "@/components/studio";
-import { PLATFORM_ORDER, PLATFORMS } from "@/lib/platforms";
 import { GITHUB_URL, SITE_URL } from "@/lib/site";
-
-const PLATFORM_NOTES: Record<string, string> = {
-  x: "Name, bio, banner and counts, pulled live from the handle.",
-  github: "Pulled from GitHub’s public API, repos included.",
-  instagram: "Followers, following and posts from public profiles. Add your bio yourself.",
-  youtube: "Subscribers, videos, views, banner and description, straight from the channel.",
-};
-
-const TILES = [
-  {
-    id: "image",
-    label: "Image",
-    Icon: ImageIcon,
-    note: "Drop or paste any screenshot and frame it like a card. Nothing is uploaded.",
-  },
-  {
-    id: "website",
-    label: "Website",
-    Icon: Globe,
-    note: "Paste a link and kado captures the top of the page, ready to frame.",
-  },
-  ...PLATFORM_ORDER.map((id) => ({ id, label: PLATFORMS[id].label, Icon: PLATFORM_ICONS[id], note: PLATFORM_NOTES[id] })),
-];
 
 const FAQS: { question: string; answer: string }[] = [
   {
@@ -129,7 +106,7 @@ export default function Home() {
       <main className="flex flex-1 flex-col">
         <Studio />
 
-        <section className="mx-auto w-full max-w-4xl px-4 pt-28 pb-24 text-center">
+        <section className="mx-auto w-full max-w-5xl px-4 pt-28 pb-24 text-center">
           <Reveal>
             <h2 className="text-[34px] leading-[1.1] font-medium tracking-[-0.035em] sm:text-[48px]">
               Made for where you post.
@@ -137,26 +114,12 @@ export default function Home() {
           </Reveal>
           <Reveal delay={50}>
             <p className="mx-auto mt-4 max-w-lg text-lg leading-relaxed tracking-[-0.015em] text-muted">
-              Each card follows the look of its platform, so it reads instantly in a feed.
+              Start with a profile, a screenshot or a link. Make it yours, then download it sized for the feed.
             </p>
           </Reveal>
-          <ul className="mt-12 grid gap-3 text-left sm:grid-cols-2">
-            {TILES.map(({ id, label, Icon, note }, index) => (
-              // An odd last tile spans both columns instead of sitting alone.
-              <li key={id} className="sm:odd:last:col-span-2">
-                {/* Outer radius = tile radius (8) + padding (20). */}
-                <Reveal delay={index * 50} className="flex h-full gap-4 rounded-[28px] bg-well/70 p-5">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white shadow-[0_1px_2px_rgba(42,42,39,.1)]">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <span>
-                    <span className="block font-medium">{label}</span>
-                    <span className="mt-0.5 block text-[15px] leading-snug text-pretty text-muted">{note}</span>
-                  </span>
-                </Reveal>
-              </li>
-            ))}
-          </ul>
+          <Reveal delay={100}>
+            <Features />
+          </Reveal>
         </section>
 
         <section className="mx-auto w-full max-w-2xl px-4 pb-24">
