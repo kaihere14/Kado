@@ -167,7 +167,7 @@ export default function Home() {
           </Reveal>
           <Reveal delay={50} className="mt-12 divide-y divide-black/[.06] border-y border-black/[.06]">
             {FAQS.map(({ question, answer }) => (
-              <details key={question} className="group">
+              <details key={question} className="faq group">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 font-medium tracking-[-0.015em] [&::-webkit-details-marker]:hidden">
                   {question}
                   <Plus

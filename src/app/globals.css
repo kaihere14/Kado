@@ -317,3 +317,25 @@ body {
     animation-name: fade-in-up-light;
   }
 }
+
+/* Animate the native disclosure open and shut; browsers without ::details-content just snap. */
+@media (prefers-reduced-motion: no-preference) {
+  .faq {
+    interpolate-size: allow-keywords;
+  }
+
+  .faq::details-content {
+    block-size: 0;
+    overflow: clip;
+    opacity: 0;
+    transition:
+      block-size 300ms cubic-bezier(0.32, 0.72, 0, 1),
+      opacity 200ms ease-out,
+      content-visibility 300ms allow-discrete;
+  }
+
+  .faq[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+}
